@@ -69,7 +69,7 @@ export const runSimulation = async (
   await new Promise(r => setTimeout(r, 50));
   
   onProgress(50, "Step 2.1: Ocean Currents...", 'oceanCurrent');
-  const oceanStreamlines = computeOceanCurrents(grid, circulationRes.itczLines, phys, config);
+  const oceanRes = computeOceanCurrents(grid, circulationRes.itczLines, phys, config);
 
   await new Promise(r => setTimeout(r, 50));
 
@@ -84,6 +84,8 @@ export const runSimulation = async (
       cellCount: circulationRes.cellCount,
       itczLats: new Array(12).fill(0), // Deprecated simple array
       itczLines: circulationRes.itczLines,
-      oceanStreamlines: oceanStreamlines
+      oceanStreamlines: oceanRes.streamlines,
+      impactPoints: oceanRes.impacts,
+      diagnostics: oceanRes.diagnostics
   };
 };

@@ -131,6 +131,24 @@ export interface OceanStreamline {
   strength: number; // 0.0 - 1.0 (For thickness/opacity)
 }
 
+export interface OceanImpact {
+  x: number;
+  y: number;
+  lat: number;
+  lon: number;
+  type: 'ECC' | 'EC'; // ECC = Pass 1 (Warm/Eastward), EC = Pass 2 (Cold/Westward)
+}
+
+export interface OceanDiagnosticLog {
+    type: 'EC_INFANT_DEATH' | 'ECC_STUCK';
+    x: number;
+    y: number;
+    lat: number;
+    lon: number;
+    age: number;
+    message: string;
+}
+
 export interface SimulationResult {
   grid: GridCell[];
   globalTemp: number;
@@ -141,4 +159,6 @@ export interface SimulationResult {
   itczLats: number[]; 
   itczLines: number[][]; // [Month][LonIndex] -> Lat
   oceanStreamlines: OceanStreamline[][]; // [Month (0=Jan, 6=Jul)][LineIndex]
+  impactPoints: OceanImpact[][]; // [Month][ImpactIndex]
+  diagnostics: OceanDiagnosticLog[]; // Debug logs from physics engine
 }

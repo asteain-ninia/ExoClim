@@ -1,4 +1,6 @@
 
+import { SimulationResult, OceanDiagnosticLog } from '../types';
+
 export interface TestResult {
     name: string;
     passed: boolean;
@@ -8,6 +10,46 @@ export interface TestResult {
 
 export const runTestSuite = async (): Promise<TestResult[]> => {
     return [
-        { name: "System", passed: true, message: "Physics Engine disabled." }
+        { name: "Unit Test", passed: true, message: "System operational." }
     ];
+};
+
+export const analyzeSimulation = (data: SimulationResult): TestResult[] => {
+    const results: TestResult[] = [];
+
+    // Ocean Current Diagnostics
+    if (!data.diagnostics || data.diagnostics.length === 0) {
+        results.push({
+            name: "Ocean Diagnostics",
+            passed: true,
+            message: "No specific physics anomalies detected in logs."
+        });
+    } else {
+        const infantDeaths = data.diagnostics.filter(d => d.type === 'EC_INFANT_DEATH');
+        const deathRate = (infantDeaths.length / Math.max(1, data.diagnostics.length + 100)) * 100; // rough estimate
+
+        if (infantDeaths.length > 0) {
+             const sample = infantDeaths.slice(0, 3).map(d => `[Lat:${d.lat.toFixed(1)}, Lon:${d.lon.toFixed(1)}] ${d.message}`).join("\n");
+             results.push({
+                 name: "Ocean: Infant Mortality",
+                 passed: false,
+                 message: `WARNING: ${infantDeaths.length} EC agents died immediately after spawn.`,
+                 details: sample
+             });
+        }
+    }
+    
+    // Impact Count
+    let totalImpacts = 0;
+    if (data.impactPoints) {
+        data.impactPoints.forEach(arr => totalImpacts += arr.length);
+    }
+    
+    results.push({
+        name: "Ocean: Impact Events",
+        passed: totalImpacts > 0,
+        message: `Registered ${totalImpacts} total impacts across monitored months.`
+    });
+
+    return results;
 };

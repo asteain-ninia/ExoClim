@@ -106,7 +106,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-full bg-gray-950 text-gray-100 font-sans relative overflow-hidden">
-      {showTests && <TestOverlay onClose={() => setShowTests(false)} />}
+      {showTests && <TestOverlay onClose={() => setShowTests(false)} currentResult={result} />}
 
       {/* Top Section: Map & Charts */}
       <div className="flex-1 flex flex-row min-h-0">

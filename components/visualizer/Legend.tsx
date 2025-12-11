@@ -40,16 +40,20 @@ const Legend: React.FC<{ mode: string }> = ({ mode }) => {
                              <div className="w-6 h-0 border-t border-cyan-400 border-dashed"></div>
                              <span className="text-[10px] text-cyan-200">EC Target Line</span>
                         </div>
-                         <div className="flex items-center gap-2 mt-1">
-                             <div className="text-[14px]">➤</div>
-                             <span className="text-[10px] text-gray-300">Flow Direction</span>
+                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-700">
+                             <span className="text-red-500 font-bold text-lg leading-none">×</span>
+                             <span className="text-[10px] text-red-200">Warm Impact (ECC)</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0">
+                             <span className="text-cyan-400 font-bold text-lg leading-none">+</span>
+                             <span className="text-[10px] text-cyan-200">Cold Impact (EC)</span>
                         </div>
                         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-700">
                              <div className="w-6 h-0 border-t border-red-500 border-solid"></div>
                              <span className="text-[10px] text-red-400 font-bold">Collision Wall</span>
                         </div>
                         <div className="p-2 bg-blue-900/40 rounded border border-blue-800 text-[10px] text-blue-200 mt-2">
-                             <p className="mb-1">海流はアトラクタ（Target Line）に引き寄せられ、到達すると減速します。</p>
+                             <p className="mb-1">海流は重複が自動的に統合され、主要な流れのみが表示されています。</p>
                         </div>
                     </div>
                 </div>

@@ -187,12 +187,12 @@ export const drawOverlays = (
             const pts = line.points;
             if (pts.length < 2) return;
             
-            ctx.lineWidth = 3.0 * Math.sqrt(zoom);
+            ctx.lineWidth = 2.0 * Math.sqrt(zoom); // Slightly thinner for cleaner look with improved density
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
             let distanceAccumulator = 0;
-            const arrowInterval = 60;
+            const arrowInterval = 80; // Widen arrow spacing
             const itczRef = data.itczLines?.[m] || [];
 
             for(let i=1; i<pts.length; i++) {
@@ -258,17 +258,71 @@ export const drawOverlays = (
              let cx = startX;
              while(cx < width) { drawStreamline(line, cx); cx += mapWidth; }
         }
+
+        // --- DRAW IMPACT POINTS ---
+        if (data.impactPoints && data.impactPoints[m]) {
+            const impacts = data.impactPoints[m];
+            
+            const drawImpactMarker = (im: any, xOff: number) => {
+                const x = getX(im.lon >= 0 ? (im.lon + 180) * (gridCols/360) : (im.lon + 180) * (gridCols/360)) + xOff;
+                const y = getY(im.lat) + offsetY;
+                const size = 4 * Math.sqrt(zoom);
+                
+                if (im.type === 'ECC') {
+                    // ECC Impact (Red X) - Warm current hitting East coast
+                    ctx.strokeStyle = '#ff4444';
+                    ctx.lineWidth = 2 * Math.sqrt(zoom);
+                    ctx.beginPath();
+                    ctx.moveTo(x - size, y - size);
+                    ctx.lineTo(x + size, y + size);
+                    ctx.moveTo(x + size, y - size);
+                    ctx.lineTo(x - size, y + size);
+                    ctx.stroke();
+                    
+                    // Glow
+                    ctx.fillStyle = 'rgba(255, 50, 50, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+
+                } else {
+                    // EC Impact (Cyan +) - Cold/Return current hitting West coast
+                    ctx.strokeStyle = '#44ffff';
+                    ctx.lineWidth = 2 * Math.sqrt(zoom);
+                    ctx.beginPath();
+                    ctx.moveTo(x, y - size);
+                    ctx.lineTo(x, y + size);
+                    ctx.moveTo(x - size, y);
+                    ctx.lineTo(x + size, y);
+                    ctx.stroke();
+
+                     // Glow
+                    ctx.fillStyle = 'rgba(50, 255, 255, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            };
+
+            let cx = startX;
+            while(cx < width) {
+                for (const im of impacts) {
+                     drawImpactMarker(im, cx);
+                }
+                cx += mapWidth;
+            }
+        }
     }
 
     if (arrowsToDraw.length > 0) {
         for (const arrow of arrowsToDraw) {
-             const arrowSize = 8 * arrow.scale;
+             const arrowSize = 6 * arrow.scale;
              ctx.save();
              ctx.translate(arrow.x, arrow.y);
              ctx.rotate(arrow.angle);
              ctx.fillStyle = arrow.color;
-             ctx.strokeStyle = "rgba(255, 255, 255, 0.9)"; 
-             ctx.lineWidth = 2.0;
+             ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"; 
+             ctx.lineWidth = 1.0;
              ctx.beginPath();
              ctx.moveTo(-arrowSize, -arrowSize * 0.6);
              ctx.lineTo(arrowSize * 0.6, 0); 
