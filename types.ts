@@ -64,6 +64,10 @@ export interface PhysicsParams {
   oceanEcDamping: number; // Damping factor to reduce oscillation (Derivative Gain D)
   oceanEcPolewardDrift: number; // Initial drift speed towards poles after split.
   oceanEcLatGap: number; // Degrees. Separation between ITCZ and EC lines.
+
+  // 2.0 Collision Tuning
+  oceanCollisionBuffer: number; // km. Distance from coast to trigger collision.
+  oceanSmoothing: number; // Iterations. Smoothing steps for collision map.
 }
 
 // 1-4. Grid & Map
@@ -78,6 +82,9 @@ export interface GridCell {
 
   // Step 1: ITCZ
   heatMapVal: number; // -1.0 (Ocean) to +1.0 (Land) for ITCZ calculation
+
+  // Step 2.0: Ocean Collision
+  collisionMask: number; // -X (Safe) to +X (Wall). Smoothed distance field.
 
   // Placeholders for removed logic
   insolation: number[]; 

@@ -1,4 +1,5 @@
 
+
 import { GridCell, CustomMapData } from '../types';
 import { PriorityQueue } from './utils/PriorityQueue';
 import { fbmSphere, ridgeSphere } from './utils/noise';
@@ -276,6 +277,7 @@ export const initializeGrid = (rows: number, cols: number, startingMap: string =
             isLand: mapData.isLand[idx],
             distCoast: 0,
             heatMapVal: 0,
+            collisionMask: 0,
             tempZonal: new Array(12).fill(0),
             temp: new Array(12).fill(0),
             precip: new Array(12).fill(0),

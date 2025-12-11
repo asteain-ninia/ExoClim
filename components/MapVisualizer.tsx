@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useRef, useState } from 'react';
 import { SimulationResult, PhysicsParams } from '../types';
 import { drawPixels } from './visualizer/PixelRenderer';
@@ -7,7 +8,7 @@ import Legend from './visualizer/Legend';
 
 interface Props {
   data: SimulationResult | null;
-  mode: 'temp' | 'precip' | 'distCoast' | 'climate' | 'insolation' | 'wind' | 'tempZonal' | 'oceanCurrent' | 'elevation' | 'hadley' | 'itcz_heatmap' | 'itcz_result';
+  mode: 'temp' | 'precip' | 'distCoast' | 'climate' | 'insolation' | 'wind' | 'tempZonal' | 'oceanCurrent' | 'elevation' | 'hadley' | 'itcz_heatmap' | 'itcz_result' | 'ocean_collision';
   width: number;
   height: number;
   displayMonth: 'annual' | 0 | 6; 
@@ -47,7 +48,8 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
       'elevation': '地形・標高 (Elevation)',
       'hadley': '大気循環・ITCZ (Circulation)',
       'itcz_heatmap': 'Step 1.1: 影響マップ (HeatMap)',
-      'itcz_result': 'Step 1.6: ITCZ Result'
+      'itcz_result': 'Step 1.6: ITCZ Result',
+      'ocean_collision': 'Step 2.0: 衝突リスク (Collision)'
   };
 
   // --- Rendering to Buffer ---
@@ -208,6 +210,9 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
            } else {
              text += `\nState: Land`;
            }
+      } else if (mode === 'ocean_collision') {
+           text += `\nCollision Field: ${cell.collisionMask?.toFixed(1)}`;
+           text += `\nStatus: ${cell.collisionMask > 0 ? 'WALL' : 'SAFE'}`;
       } else if (mode === 'itcz_heatmap') {
           text += `\nHeatMap: ${cell.heatMapVal.toFixed(2)}`;
           const type = cell.heatMapVal > 0.5 ? "Inland" : (cell.heatMapVal < -0.5 ? "Deep Ocean" : "Coastal");
@@ -283,7 +288,7 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
       <div className="absolute bottom-3 left-3 bg-black/80 px-4 py-2 rounded-full text-xs font-bold text-white backdrop-blur-md pointer-events-none select-none flex items-center gap-2 border border-white/20 shadow-lg">
         <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
         <span className="tracking-wider text-sm">{modeLabels[mode] || mode}</span>
-        {mode !== 'climate' && mode !== 'distCoast' && mode !== 'elevation' && mode !== 'oceanCurrent' && mode !== 'itcz_heatmap' && (
+        {mode !== 'climate' && mode !== 'distCoast' && mode !== 'elevation' && mode !== 'oceanCurrent' && mode !== 'itcz_heatmap' && mode !== 'ocean_collision' && (
              <span className="ml-2 px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-300">
                  {displayMonth === 'annual' ? '年平均' : (displayMonth === 0 ? '1月' : '7月')}
              </span>

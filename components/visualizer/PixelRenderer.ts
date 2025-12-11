@@ -1,4 +1,5 @@
 
+
 import * as d3 from 'd3';
 import { SimulationResult } from '../../types';
 import { d3ColorToRgb, hexToRgb } from '../../services/utils/helpers';
@@ -27,6 +28,8 @@ export const drawPixels = (
         }
         return arr[displayMonth];
     };
+
+    const collisionScale = d3.scaleDiverging(d3.interpolateRdBu).domain([200, 0, -500]);
 
     for (let i = 0; i < data.grid.length; i++) {
         const cell = data.grid[i];
@@ -61,6 +64,28 @@ export const drawPixels = (
         } else if (mode === 'insolation') {
             const val = getVal(cell.insolation);
             [r,g,b] = d3ColorToRgb(insolationScale(val));
+
+        } else if (mode === 'ocean_collision') {
+             const val = cell.collisionMask;
+             // collisionMask > 0 means Wall/Buffer. < 0 means Safe.
+             // We want Red for Wall (>0), White for Boundary (0), Blue for Safe (<0).
+             // interpolateRdBu: 0=Red, 0.5=White, 1=Blue.
+             // Map val: 
+             // > 200 (Deep Inland) -> 0.0 (Red)
+             // 0 (Buffer Edge) -> 0.5 (White)
+             // -500 (Deep Ocean) -> 1.0 (Blue)
+             
+             let norm = 0.5;
+             if (val > 0) {
+                 // 0 to 200 -> 0.5 to 0.0
+                 const t = Math.min(1.0, val / 200.0);
+                 norm = 0.5 - (t * 0.5);
+             } else {
+                 // 0 to -500 -> 0.5 to 1.0
+                 const t = Math.min(1.0, Math.abs(val) / 500.0);
+                 norm = 0.5 + (t * 0.5);
+             }
+             [r,g,b] = d3ColorToRgb(d3.interpolateRdBu(norm));
 
         } else if (mode === 'elevation' || mode === 'itcz_result' || mode === 'oceanCurrent') {
             if (!cell.isLand) {

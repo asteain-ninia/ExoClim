@@ -46,6 +46,7 @@ export const runSimulation = async (
       cell.moisture = new Array(12).fill(0);
       cell.precip = new Array(12).fill(0);
       cell.heatMapVal = 0; // Reset Step 1
+      cell.collisionMask = 0; // Reset Step 2.0
       
       // Default Climate Class (Unknown)
       cell.climateClass = cell.isLand ? '?' : 'Oc';
@@ -64,7 +65,10 @@ export const runSimulation = async (
   await new Promise(r => setTimeout(r, 50));
 
   // --- Step 2: Ocean Currents ---
-  onProgress(40, "Step 2: Ocean Currents...", 'oceanCurrent');
+  onProgress(40, "Step 2: Ocean Collision Field...", 'ocean_collision');
+  await new Promise(r => setTimeout(r, 50));
+  
+  onProgress(50, "Step 2.1: Ocean Currents...", 'oceanCurrent');
   const oceanStreamlines = computeOceanCurrents(grid, circulationRes.itczLines, phys, config);
 
   await new Promise(r => setTimeout(r, 50));

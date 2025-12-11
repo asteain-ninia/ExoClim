@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useState, useEffect } from 'react';
 import { PlanetParams, AtmosphereParams, SimulationConfig, CustomMapData, PhysicsParams } from '../types';
 import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_PHYSICS_PARAMS, RESOLUTION_PRESETS } from '../constants';
@@ -31,6 +32,9 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
   const updateAtm = (key: keyof AtmosphereParams, val: number) => setAtm(prev => ({ ...prev, [key]: val }));
   const updatePhys = (key: keyof PhysicsParams, val: number) => setPhys(prev => ({ ...prev, [key]: val }));
   const updateConfig = (key: keyof SimulationConfig, val: any) => setConfig(prev => ({ ...prev, [key]: val }));
+
+  // Dynamic max buffer based on planet radius (approx 10% of radius or fixed large cap)
+  const maxCollisionBuffer = Math.min(2000, Math.floor(planet.radius * 0.2));
 
   useEffect(() => {
       const errs: string[] = [];
@@ -337,10 +341,20 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
 
                  <div className="flex justify-between items-center border-b border-cyan-900/50 pb-1 mb-3 mt-4">
                      <h3 className="text-xs font-bold text-cyan-400 uppercase">Step 2: Ocean Currents</h3>
-                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 2.1 & 2.2</span>
+                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 2.0, 2.1 & 2.2</span>
                  </div>
                  
                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-20">
+                    <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.0 Collision (New)</div>
+                        <div className="space-y-1">
+                             <Slider label="衝突バッファ" value={phys.oceanCollisionBuffer} min={0} max={maxCollisionBuffer} step={10} unit="km" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanCollisionBuffer', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanCollisionBuffer} />
+                             <Slider label="平滑化強度" value={phys.oceanSmoothing} min={0} max={10} step={1} unit="iter" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanSmoothing', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanSmoothing} />
+                        </div>
+                    </div>
+
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
                         <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.1 Base Physics</div>
                         <div className="space-y-1">

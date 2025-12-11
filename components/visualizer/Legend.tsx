@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 
 const Legend: React.FC<{ mode: string }> = ({ mode }) => {
@@ -43,6 +44,10 @@ const Legend: React.FC<{ mode: string }> = ({ mode }) => {
                              <div className="text-[14px]">➤</div>
                              <span className="text-[10px] text-gray-300">Flow Direction</span>
                         </div>
+                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-700">
+                             <div className="w-6 h-0 border-t border-red-500 border-solid"></div>
+                             <span className="text-[10px] text-red-400 font-bold">Collision Wall</span>
+                        </div>
                         <div className="p-2 bg-blue-900/40 rounded border border-blue-800 text-[10px] text-blue-200 mt-2">
                              <p className="mb-1">海流はアトラクタ（Target Line）に引き寄せられ、到達すると減速します。</p>
                         </div>
@@ -59,6 +64,26 @@ const Legend: React.FC<{ mode: string }> = ({ mode }) => {
                     <div className={`flex justify-between text-[10px] font-mono ${labelClass}`}>
                         <span>-1.0 (Ocean)</span><span>0</span><span>+1.0 (Inland)</span>
                     </div>
+                </div>
+            );
+        case 'ocean_collision':
+             return (
+                <div className={containerClass}>
+                    <h4 className={titleClass}>衝突リスク / バッファ</h4>
+                    <div className="h-4 w-full rounded-sm mb-1 border border-gray-700"
+                        style={{ background: 'linear-gradient(to right, #2166ac, #f7f7f7, #b2182b)' }}
+                    ></div>
+                    <div className={`flex justify-between text-[10px] font-mono ${labelClass}`}>
+                        <span>Safe (Ocean)</span><span>Edge (0)</span><span>Wall (Land+Buffer)</span>
+                    </div>
+                     <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-700">
+                             <div className="w-6 h-0 border-t border-white border-solid"></div>
+                             <span className="text-[10px] text-gray-300 font-bold">Effective Wall Line</span>
+                    </div>
+                     <div className="p-2 bg-red-900/40 rounded border border-red-800 text-[10px] text-red-200 mt-2">
+                         <p>赤い領域 (>0) は「壁」として認識され、海流が反射します。</p>
+                         <p>海岸線からバッファ距離分だけ沖合に拡張されています。</p>
+                     </div>
                 </div>
             );
         case 'itcz_result':

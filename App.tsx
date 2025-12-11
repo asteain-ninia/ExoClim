@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Controls from './components/Controls';
 import MapVisualizer from './components/MapVisualizer';
@@ -97,6 +99,7 @@ const App: React.FC = () => {
           { id: 'itcz_result', label: '1.6 Final' }
       ]},
       { id: 'step2', label: 'Step 2', desc: 'Ocean', subSteps: [
+          { id: 'ocean_collision', label: '2.0 Risk'},
           { id: 'oceanCurrent', label: '2.1 Currents' }
       ]},
   ];

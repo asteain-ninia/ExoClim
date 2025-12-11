@@ -1,4 +1,5 @@
 
+
 import { SimulationResult, OceanStreamline, PhysicsParams } from '../../types';
 
 export const drawOverlays = (
@@ -18,6 +19,71 @@ export const drawOverlays = (
 ) => {
     const getX = (colIdx: number) => (colIdx / gridCols) * mapWidth;
     const getY = (lat: number) => (90 - lat) / 180 * (height * zoom);
+
+    // --- COLLISION WALL CONTOUR ---
+    // Draw for Step 2.0 (ocean_collision) and 2.1 (oceanCurrent)
+    if (mode === 'ocean_collision' || mode === 'oceanCurrent') {
+        const threshold = 0;
+        ctx.strokeStyle = mode === 'ocean_collision' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 0, 0, 0.6)';
+        ctx.lineWidth = 1.0 * Math.sqrt(zoom);
+        
+        // Simple contour: Scan horizontal and vertical edges
+        // Horizontal Edges
+        ctx.beginPath();
+        for (let r = 0; r < gridRows; r++) {
+            for (let c = 0; c < gridCols; c++) {
+                const idx = r * gridCols + c;
+                const rightIdx = r * gridCols + (c + 1) % gridCols;
+                const val = data.grid[idx].collisionMask;
+                const rightVal = data.grid[rightIdx].collisionMask;
+
+                if ((val > threshold) !== (rightVal > threshold)) {
+                    // Interpolate position
+                    const t = (threshold - val) / (rightVal - val);
+                    const x = getX(c + t);
+                    const y = getY(data.grid[idx].lat) + offsetY;
+
+                    // Draw a small vertical mark or start of line (simplified to segments for speed)
+                    // Just drawing small segments for now to represent the wall
+                    ctx.moveTo(startX + x, y - 2);
+                    ctx.lineTo(startX + x, y + 2);
+                    if (startX + x + mapWidth < width) {
+                        ctx.moveTo(startX + x + mapWidth, y - 2);
+                        ctx.lineTo(startX + x + mapWidth, y + 2);
+                    }
+                }
+            }
+        }
+        ctx.stroke();
+
+        // Vertical Edges
+        ctx.beginPath();
+        for (let r = 0; r < gridRows - 1; r++) {
+            for (let c = 0; c < gridCols; c++) {
+                const idx = r * gridCols + c;
+                const downIdx = (r + 1) * gridCols + c;
+                const val = data.grid[idx].collisionMask;
+                const downVal = data.grid[downIdx].collisionMask;
+
+                if ((val > threshold) !== (downVal > threshold)) {
+                    const t = (threshold - val) / (downVal - val);
+                    const x = getX(c);
+                    // Linear lat interp
+                    const lat1 = data.grid[idx].lat;
+                    const lat2 = data.grid[downIdx].lat;
+                    const y = getY(lat1 + t * (lat2 - lat1)) + offsetY;
+
+                    ctx.moveTo(startX + x - 2, y);
+                    ctx.lineTo(startX + x + 2, y);
+                     if (startX + x + mapWidth < width) {
+                        ctx.moveTo(startX + x + mapWidth - 2, y);
+                        ctx.lineTo(startX + x + mapWidth + 2, y);
+                    }
+                }
+            }
+        }
+        ctx.stroke();
+    }
 
     // ITCZ Result
     if (mode === 'itcz_result' && data.itczLines) {

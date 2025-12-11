@@ -1,3 +1,5 @@
+
+
 import { GridCell, SimulationConfig, PhysicsParams, OceanStreamline, StreamlinePoint } from '../../types';
 
 interface Agent {
@@ -40,19 +42,63 @@ export const computeOceanCurrents = (
   
   const getLatFromRow = (r: number) => 90 - (r / (rows - 1)) * 180;
   const getRowFromLat = (lat: number) => (90 - lat) / 180 * (rows - 1);
-  const isLand = (c: number, r: number) => grid[getIdx(c, r)].isLand;
+
+  // --- STEP 2.0: Generate Collision Field ---
+  // 1. Create Buffered Map
+  // distCoast: +Land, -Ocean.
+  // We want to shift the wall "outwards" into the ocean by oceanCollisionBuffer.
+  // New Wall at: distCoast = -buffer.
+  // Effective Distance = distCoast + buffer.
+  // Collision > 0. Safe < 0.
   
-  // Pre-calculate gradient of distance field for collision normals
+  let collisionField = new Float32Array(rows * cols);
+  for(let i=0; i<grid.length; i++) {
+      collisionField[i] = grid[i].distCoast + phys.oceanCollisionBuffer;
+  }
+
+  // 2. Smooth Field
+  for(let iter=0; iter<phys.oceanSmoothing; iter++) {
+      const nextField = new Float32Array(rows * cols);
+      for(let r=0; r<rows; r++) {
+          for(let c=0; c<cols; c++) {
+              let sum = 0;
+              let count = 0;
+              // 3x3 Box Blur
+              for(let dr=-1; dr<=1; dr++) {
+                  for(let dc=-1; dc<=1; dc++) {
+                      const nr = Math.min(Math.max(r+dr, 0), rows-1);
+                      const nc = ((c+dc) % cols + cols) % cols;
+                      sum += collisionField[nr*cols + nc];
+                      count++;
+                  }
+              }
+              nextField[r*cols + c] = sum / count;
+          }
+      }
+      collisionField = nextField;
+  }
+
+  // Store for Visualization
+  for(let i=0; i<grid.length; i++) {
+      grid[i].collisionMask = collisionField[i];
+  }
+  
+  // 3. Compute Gradients from Smoothed Field
   const distGradX = new Float32Array(rows * cols);
   const distGradY = new Float32Array(rows * cols);
   
   for(let r=0; r<rows; r++) {
       for(let c=0; c<cols; c++) {
           const idx = r*cols + c;
-          const left = grid[getIdx(c-1, r)].distCoast;
-          const right = grid[getIdx(c+1, r)].distCoast;
-          const up = grid[getIdx(c, r-1)].distCoast; // r-1 is North
-          const down = grid[getIdx(c, r+1)].distCoast;
+          const idxLeft = getIdx(c-1, r);
+          const idxRight = getIdx(c+1, r);
+          const idxUp = getIdx(c, r-1);
+          const idxDown = getIdx(c, r+1);
+          
+          const left = collisionField[idxLeft];
+          const right = collisionField[idxRight];
+          const up = collisionField[idxUp]; 
+          const down = collisionField[idxDown];
           
           distGradX[idx] = (right - left) * 0.5;
           distGradY[idx] = (down - up) * 0.5; 
@@ -70,10 +116,10 @@ export const computeOceanCurrents = (
       const idx01 = getIdx(c, r+1);
       const idx11 = getIdx(c+1, r+1);
       
-      const d00 = grid[idx00].distCoast;
-      const d10 = grid[idx10].distCoast;
-      const d01 = grid[idx01].distCoast;
-      const d11 = grid[idx11].distCoast;
+      const d00 = collisionField[idx00];
+      const d10 = collisionField[idx10];
+      const d01 = collisionField[idx01];
+      const d11 = collisionField[idx11];
       
       const dist = 
         d00 * (1-fx)*(1-fy) +
@@ -116,12 +162,14 @@ export const computeOceanCurrents = (
       if (r < 0 || r >= rows) continue;
       const env = getEnvironment(c, r);
       
-      // Spawn in deep ocean
+      // Spawn in safe zone (dist < 0)
       if (env.dist > -50) continue; 
 
-      const westIsLand = grid[getIdx(c - 1, Math.round(r))].isLand;
+      const westIdx = getIdx(c - 1, Math.round(r));
+      const westIsWall = collisionField[westIdx] > 0; // Check smoothed wall
+
       let shouldSpawn = false;
-      if (westIsLand) shouldSpawn = true;
+      if (westIsWall) shouldSpawn = true;
       else if (c % gapFillInterval === 0) shouldSpawn = true;
 
       if (shouldSpawn) {
@@ -141,10 +189,8 @@ export const computeOceanCurrents = (
 
     const MAX_STEPS = phys.oceanStreamlineSteps;
     const DT = 0.5; 
-    const SHELF_DEPTH = -200; 
-
+    
     // Run ECC Simulation
-    // We store traces to add to finishedLines
     let agentPoints: StreamlinePoint[][] = eccAgents.map(a => [{
         x: a.x, y: a.y,
         lon: -180 + (a.x % cols) / cols * 360,
@@ -174,7 +220,8 @@ export const computeOceanCurrents = (
             let nvy = agent.vy + ayItcz;
             
             // 3. Wall Sliding (Impact Detection)
-            if (dist > SHELF_DEPTH) {
+            // Collision threshold is 0 in the buffered/smoothed field
+            if (dist > 0) {
                 const len = Math.sqrt(gx*gx + gy*gy);
                 if (len > 0.0001) {
                     const nx = gx / len;
@@ -200,8 +247,8 @@ export const computeOceanCurrents = (
                     }
                 }
                 
-                // Hard stop
-                if (dist > 10.0) {
+                // Hard stop deep inside wall
+                if (dist > 50.0) {
                      if (!agent.hasTriggeredImpact) {
                          impactPoints.push({ x: agent.x, y: agent.y, lat: getLatFromRow(agent.y) });
                      }
@@ -219,7 +266,6 @@ export const computeOceanCurrents = (
             }
 
             if (speed < 0.01) {
-                // If stuck, die
                 agent.active = false;
                 continue;
             }
@@ -259,46 +305,37 @@ export const computeOceanCurrents = (
     }
 
     // --- PASS 2: Equatorial Current (EC) ---
-    // Flows East -> West (-U)
-    // Starts from Impact Points of ECC.
-    // Splits North/South.
     
     let ecAgents: Agent[] = [];
-    nextAgentId = 0; // Reset ID for new array mapping
+    nextAgentId = 0; 
 
     for (const ip of impactPoints) {
-        // Spawn North Branch
         ecAgents.push({
             id: nextAgentId++,
             active: true,
             x: ip.x,
             y: ip.y,
-            vx: -phys.oceanBaseSpeed * 0.5, // Start Westward
-            vy: -phys.oceanEcPolewardDrift, // Initial kick North (-Y)
+            vx: -phys.oceanBaseSpeed * 0.5,
+            vy: -phys.oceanEcPolewardDrift, 
             strength: 2.0,
             age: 0,
             type: 'EC_N'
         });
         
-        // Spawn South Branch
         ecAgents.push({
             id: nextAgentId++,
             active: true,
             x: ip.x,
             y: ip.y,
-            vx: -phys.oceanBaseSpeed * 0.5, // Start Westward
-            vy: phys.oceanEcPolewardDrift, // Initial kick South (+Y)
+            vx: -phys.oceanBaseSpeed * 0.5,
+            vy: phys.oceanEcPolewardDrift,
             strength: 2.0,
             age: 0,
             type: 'EC_S'
         });
     }
 
-    // Calculate separation distance based on oceanEcLatGap
     const ecSeparation = phys.oceanEcLatGap;
-
-    // Collect secondary impact points (for visualization or future steps)
-    const ecImpactPoints: ImpactPoint[] = [];
 
     let ecPoints: StreamlinePoint[][] = ecAgents.map(a => [{
         x: a.x, y: a.y,
@@ -318,8 +355,7 @@ export const computeOceanCurrents = (
             // 1. Westward Drive
             let baseAx = -phys.oceanBaseSpeed * 0.05;
 
-            // 2. Attraction to Separated Latitude with PD Control + Arrival Squeezing
-            // Target is ITCZ +/- gap
+            // 2. Attraction to Separated Latitude
             const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
             const baseItczLat = itcz[lonIdx];
             
@@ -328,45 +364,36 @@ export const computeOceanCurrents = (
             else targetLat -= ecSeparation; // South
             
             const targetY = getRowFromLat(targetLat);
-            const errorY = targetY - agent.y; // Vector pointing to target
+            const errorY = targetY - agent.y; 
             
-            // PD Controller with Critical Damping approximation near target
-            // c_crit = 2 * sqrt(m * k) where m=1
-            // We aim for critical damping near the target to prevent oscillation and "squeeze" the line flat.
             const k = phys.oceanEcPatternForce;
             const criticalDamping = 2.0 * Math.sqrt(k);
-
             let currentDamping = phys.oceanEcDamping;
             
-            // "Squeeze" Logic: Ramp up damping when close to target (within ~3 degrees)
-            // Blend from user-set damping to Critical Damping (or slightly over-damped) to kill lateral momentum
             if (Math.abs(errorY) < 3.0) { 
-                 const factor = (3.0 - Math.abs(errorY)) / 3.0; // 0.0 (far) to 1.0 (at target)
-                 // Use a blended damping that approaches a higher value at the target
+                 const factor = (3.0 - Math.abs(errorY)) / 3.0; 
                  const targetDamping = Math.max(currentDamping, criticalDamping * 1.5);
                  currentDamping = currentDamping * (1 - factor) + targetDamping * factor;
             }
 
             const pTerm = errorY * k;
             const dTerm = -agent.vy * currentDamping;
-            
             const ayControl = pTerm + dTerm;
 
-            // Coastal Crawl Logic
-            // If deep along the coast, slow down Westward drift to allow "crawling" up/down
+            // Coastal Crawl
             const currentLat = getLatFromRow(agent.y);
             const latDiff = Math.abs(currentLat - targetLat);
             
-            if (dist > -1500 && latDiff > 2.5) {
-                 baseAx *= 0.1; // Reduce Westward driving force significantly
-                 // We rely on the PD controller to drive the N/S motion.
+            // "Buffer Crawl": If inside buffer but trying to separate
+            if (dist > -100 && latDiff > 2.5) {
+                 baseAx *= 0.1; 
             }
 
             let nvx = agent.vx + baseAx;
             let nvy = agent.vy + ayControl;
 
             // 3. Wall Sliding
-            if (dist > SHELF_DEPTH) {
+            if (dist > 0) {
                 const len = Math.sqrt(gx*gx + gy*gy);
                 if (len > 0.0001) {
                     const nx = gx / len;
@@ -376,30 +403,22 @@ export const computeOceanCurrents = (
                         nvx = nvx - dot * nx;
                         nvy = nvy - dot * ny;
                         
-                        if (!agent.hasTriggeredImpact) {
-                             agent.hasTriggeredImpact = true;
-                             ecImpactPoints.push({ x: agent.x, y: agent.y, lat: getLatFromRow(agent.y) });
-                        }
-
                         // Light friction
                         nvx *= 0.99;
                         nvy *= 0.99;
                         
-                        // If blocked Eastward, stop.
                         if (nvx > 0.1) {
                             agent.active = false;
                             continue;
                         }
                     }
                 }
-                
-                if (dist > 10.0) {
+                if (dist > 50.0) {
                      agent.active = false;
                      continue;
                 }
             }
             
-            // Cap Speed
             const speed = Math.sqrt(nvx*nvx + nvy*nvy);
             const maxSpeed = phys.oceanBaseSpeed * 2.0;
             if (speed > maxSpeed) {
@@ -417,7 +436,6 @@ export const computeOceanCurrents = (
             const nextX = agent.x + agent.vx * DT;
             const nextY = agent.y + agent.vy * DT;
             
-            // Boundary Check
             const nextLat = getLatFromRow(nextY);
             if (Math.abs(nextLat) > 85) { agent.active = false; continue; }
 
@@ -433,7 +451,6 @@ export const computeOceanCurrents = (
         }
     }
 
-    // Save EC Lines
     for(const agent of ecAgents) {
         if (ecPoints[agent.id].length > 5) {
             finishedLines.push({ points: ecPoints[agent.id], strength: agent.strength, type: agent.type === 'EC_N' ? 'split_n' : 'split_s' });
@@ -443,7 +460,6 @@ export const computeOceanCurrents = (
     streamlinesByMonth[m] = finishedLines;
   }
   
-  // Fill other months
   for(let m=0; m<12; m++) {
       if (m!==0 && m!==6) streamlinesByMonth[m] = [];
   }
