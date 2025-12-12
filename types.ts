@@ -162,3 +162,28 @@ export interface SimulationResult {
   impactPoints: OceanImpact[][]; // [Month][ImpactIndex]
   diagnostics: OceanDiagnosticLog[]; // Debug logs from physics engine
 }
+
+// --- DEBUGGING TYPES ---
+export interface DebugAgentSnapshot {
+    id: number;
+    type: 'ECC' | 'EC_N' | 'EC_S';
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    state: 'active' | 'dead' | 'stuck' | 'impact';
+    cause?: string;
+}
+
+export interface DebugFrame {
+    step: number;
+    agents: DebugAgentSnapshot[];
+}
+
+export interface DebugSimulationData {
+    frames: DebugFrame[];
+    collisionField: Float32Array;
+    width: number;
+    height: number;
+    itczLine: number[];
+}

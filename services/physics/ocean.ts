@@ -10,9 +10,7 @@ interface Agent {
   vx: number;
   vy: number;
   strength: number;
-  age: number;
   type: 'ECC' | 'EC_N' | 'EC_S';
-  hasTriggeredImpact?: boolean; // For ECC to avoid multiple triggers
 }
 
 interface ImpactPointTemp {
@@ -48,10 +46,11 @@ export const computeOceanCurrents = (
   const getLonFromCol = (c: number) => -180 + (c / cols) * 360;
 
   // --- STEP 2.0: Generate Collision Field ---
-  // Same logic as before: Buffered distance map + Smoothing
   
   let collisionField = new Float32Array(rows * cols);
   for(let i=0; i<grid.length; i++) {
+      // Positive = Land/Wall, Negative = Ocean
+      // We add a small buffer inside the physics, but for raw field we keep it close to geometry
       collisionField[i] = grid[i].distCoast + phys.oceanCollisionBuffer;
   }
 
@@ -81,7 +80,7 @@ export const computeOceanCurrents = (
       grid[i].collisionMask = collisionField[i];
   }
   
-  // Compute Gradients
+  // Compute Gradients (Point TOWARDS higher values = Land)
   const distGradX = new Float32Array(rows * cols);
   const distGradY = new Float32Array(rows * cols);
   
@@ -119,6 +118,21 @@ export const computeOceanCurrents = (
       };
   };
 
+  // Safe Spawn Search: Raycast Westwards to find open water
+  const findSafeSpawnX = (startX: number, y: number): number => {
+      const maxSearch = 40; 
+      let currX = startX;
+      for(let i=0; i<maxSearch; i++) {
+          const env = getEnvironment(currX, y);
+          // Look for deep water
+          if (env.dist < -10.0) {
+              return currX - 1.0; 
+          }
+          currX -= 0.5; // Finer step
+      }
+      return startX - 10.0; 
+  };
+
   // --- Simulation Loop ---
 
   for (const m of targetMonths) {
@@ -150,9 +164,15 @@ export const computeOceanCurrents = (
         const len2 = Math.sqrt(ex*ex + ey*ey);
         const sim = dot / (len1 * len2 + 0.0001);
 
-        if (sim > 0.9) return true; 
+        if (sim > 0.95) return true; // Stricter pruning
         return false;
     };
+
+    // --- Time Stepping Config ---
+    const MAX_STEPS = phys.oceanStreamlineSteps;
+    const SUB_STEPS = 10; // High precision sub-stepping
+    const TOTAL_DT = 0.5; 
+    const DT = TOTAL_DT / SUB_STEPS;
 
     // --- PASS 1: Equatorial Counter Current (ECC) ---
     
@@ -166,8 +186,8 @@ export const computeOceanCurrents = (
       if (r < 0 || r >= rows) continue;
       const env = getEnvironment(c, r);
       
-      // Spawn in safe zone
-      if (env.dist > -50) continue; 
+      // Strict open water spawn
+      if (env.dist > -20) continue; 
 
       const westIdx = getIdx(c - 1, Math.round(r));
       const westIsWall = collisionField[westIdx] > 0;
@@ -185,14 +205,10 @@ export const computeOceanCurrents = (
               vx: phys.oceanBaseSpeed, 
               vy: 0.0,
               strength: 2.0,
-              age: 0,
               type: 'ECC'
           });
       }
     }
-
-    const MAX_STEPS = phys.oceanStreamlineSteps;
-    const DT = 0.5; 
     
     let agentPoints: StreamlinePoint[][] = eccAgents.map(a => [{
         x: a.x, y: a.y,
@@ -206,106 +222,149 @@ export const computeOceanCurrents = (
         if (activeAgents.length === 0) break;
 
         for (const agent of activeAgents) {
-            agent.age++;
-            const { dist, gx, gy } = getEnvironment(agent.x, agent.y);
             
-            if (agent.age > 10) {
+            // Pruning
+            if (agentPoints[agent.id].length > 5) {
                  if (updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy)) {
                      agent.active = false;
                      continue; 
                  }
             }
 
-            // Physics
-            const baseAx = phys.oceanBaseSpeed * 0.05; 
-            const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
-            const targetLat = itcz[lonIdx];
-            const targetY = getRowFromLat(targetLat);
-            const distY = targetY - agent.y;
-            const ayItcz = distY * phys.oceanPatternForce;
+            let isDead = false;
 
-            let nvx = agent.vx + baseAx;
-            let nvy = agent.vy + ayItcz;
-            
-            // Wall Sliding
-            if (dist > 0) {
-                const len = Math.sqrt(gx*gx + gy*gy);
-                if (len > 0.0001) {
-                    const nx = gx / len;
-                    const ny = gy / len;
-                    const dot = nvx * nx + nvy * ny;
+            for(let ss=0; ss<SUB_STEPS; ss++) {
+                // Pre-calc Physics Forces
+                const baseAx = phys.oceanBaseSpeed * 0.05; 
+                const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
+                const targetLat = itcz[lonIdx];
+                const targetY = getRowFromLat(targetLat);
+                const distY = targetY - agent.y;
+                const ayItcz = distY * phys.oceanPatternForce;
+
+                // Candidate Velocity
+                let nvx = agent.vx + baseAx;
+                let nvy = agent.vy + ayItcz;
+
+                // Proposed Position
+                const nextX = agent.x + nvx * DT;
+                const nextY = agent.y + nvy * DT;
+
+                // --- Improved Collision Detection (Raycast) ---
+                const { dist: distOld } = getEnvironment(agent.x, agent.y);
+                const { dist: distNew, gx, gy } = getEnvironment(nextX, nextY);
+
+                if (distNew > 0 && distOld <= 0) {
+                    // Crossed Boundary!
                     
-                    if (dot > 0) {
-                        nvx = nvx - dot * nx;
-                        nvy = nvy - dot * ny;
-                        
-                        if (!agent.hasTriggeredImpact) {
-                             agent.hasTriggeredImpact = true;
-                             const impact = { 
-                                 x: agent.x, y: agent.y, 
-                                 lat: getLatFromRow(agent.y),
-                                 lon: getLonFromCol(agent.x)
-                             };
-                             impactPointsTemp.push(impact);
-                             impactResults.push({...impact, type: 'ECC'});
-                        }
-
-                        if (nvx < -0.1) {
-                            agent.active = false;
-                            continue;
-                        }
+                    // 1. Binary Search for Intersection Point (Hit)
+                    let tLow = 0, tHigh = 1;
+                    let hitX = agent.x, hitY = agent.y;
+                    
+                    for(let k=0; k<4; k++) {
+                        const tMid = (tLow + tHigh) * 0.5;
+                        const mx = agent.x + (nextX - agent.x) * tMid;
+                        const my = agent.y + (nextY - agent.y) * tMid;
+                        const mEnv = getEnvironment(mx, my);
+                        if (mEnv.dist > 0) tHigh = tMid;
+                        else tLow = tMid;
+                        hitX = mx; hitY = my;
                     }
+
+                    // 2. Calculate Wall Normal at Hit
+                    const { gx: hgx, gy: hgy } = getEnvironment(hitX, hitY);
+                    const gradLen = Math.sqrt(hgx*hgx + hgy*hgy);
+                    const nx = gradLen > 0 ? hgx / gradLen : 0;
+                    const ny = gradLen > 0 ? hgy / gradLen : 0;
+
+                    // 3. Impact Detection
+                    // Gradient points INTO wall. Velocity entering wall means dot(v, n) > 0
+                    const vDotN = nvx * nx + nvy * ny;
+                    
+                    if (vDotN > 0.05) {
+                        // Hard Impact
+                        // Record precise hit point for visualization
+                        impactResults.push({
+                            x: hitX, 
+                            y: hitY,
+                            lat: getLatFromRow(hitY),
+                            lon: getLonFromCol(hitX),
+                            type: 'ECC'
+                        });
+
+                        // Calculate Safe Spawn for next pass (Backtrack from hit)
+                        const safeSpawnX = findSafeSpawnX(hitX, hitY);
+                        impactPointsTemp.push({
+                            x: safeSpawnX, 
+                            y: hitY,
+                            lat: getLatFromRow(hitY),
+                            lon: getLonFromCol(safeSpawnX)
+                        });
+
+                        agent.active = false;
+                        isDead = true;
+                        break; 
+                    } else {
+                        // Glancing Blow / Slide
+                        // Project velocity to slide along wall tangent
+                        nvx = nvx - vDotN * nx;
+                        nvy = nvy - vDotN * ny;
+                        
+                        // Push slightly out (epsilon) from hit point
+                        const epsilon = 0.1;
+                        agent.x = hitX - nx * epsilon;
+                        agent.y = hitY - ny * epsilon;
+                    }
+                } else if (distNew > 0) {
+                    // Already inside wall (Recovery)
+                    const gradLen = Math.sqrt(gx*gx + gy*gy);
+                    if (gradLen > 0.0001) {
+                        const nx = gx / gradLen;
+                        const ny = gy / gradLen;
+                        // Soft Push Out
+                        const pushFactor = distNew + 0.1; 
+                        agent.x -= nx * pushFactor;
+                        agent.y -= ny * pushFactor;
+                    }
+                } else {
+                    // Clear path
+                    agent.x = nextX;
+                    agent.y = nextY;
                 }
-                if (dist > 50.0) {
-                     if (!agent.hasTriggeredImpact) {
-                         agent.hasTriggeredImpact = true;
-                         const impact = { 
-                             x: agent.x, y: agent.y, 
-                             lat: getLatFromRow(agent.y),
-                             lon: getLonFromCol(agent.x)
-                         };
-                         impactPointsTemp.push(impact);
-                         impactResults.push({...impact, type: 'ECC'});
-                     }
-                     agent.active = false;
-                     continue;
+
+                // Speed Limit
+                const speed = Math.sqrt(nvx*nvx + nvy*nvy);
+                const maxSpeed = phys.oceanBaseSpeed * 2.5; 
+                if (speed > maxSpeed) {
+                    nvx = (nvx / speed) * maxSpeed;
+                    nvy = (nvy / speed) * maxSpeed;
+                }
+                
+                if (speed < 0.01) {
+                    agent.active = false;
+                    isDead = true;
+                    break;
+                }
+
+                agent.vx = nvx;
+                agent.vy = nvy;
+                
+                // Bounds Check
+                const nextLat = getLatFromRow(agent.y);
+                if (Math.abs(nextLat - itcz[lonIdx]) > phys.oceanDeflectLat * 1.5) {
+                     agent.active = false; 
+                     isDead = true;
+                     break; 
                 }
             }
-
-            const speed = Math.sqrt(nvx*nvx + nvy*nvy);
-            const maxSpeed = phys.oceanBaseSpeed * 2.0; 
-            if (speed > maxSpeed) {
-                nvx = (nvx / speed) * maxSpeed;
-                nvy = (nvy / speed) * maxSpeed;
-            }
-
-            if (speed < 0.01) {
-                agent.active = false;
-                continue;
-            }
-
-            agent.vx = nvx;
-            agent.vy = nvy;
-            const nextX = agent.x + agent.vx * DT;
-            const nextY = agent.y + agent.vy * DT;
             
-            const nextLonIdx = Math.floor(((nextX % cols) + cols) % cols);
-            const nextItczLat = itcz[nextLonIdx];
-            const nextLat = getLatFromRow(nextY);
-            
-            if (Math.abs(nextLat - nextItczLat) > phys.oceanDeflectLat) {
-                 agent.active = false; 
-                 continue; 
-            }
+            if (isDead) continue;
 
-            agent.x = nextX;
-            agent.y = nextY;
-            
             agentPoints[agent.id].push({
-                x: nextX, y: nextY,
-                lon: getLonFromCol(nextX),
-                lat: getLatFromRow(nextY),
-                vx: nvx, vy: nvy
+                x: agent.x, y: agent.y,
+                lon: getLonFromCol(agent.x),
+                lat: getLatFromRow(agent.y),
+                vx: agent.vx, vy: agent.vy
             });
         }
     }
@@ -328,7 +387,7 @@ export const computeOceanCurrents = (
             x: ip.x, y: ip.y,
             vx: -phys.oceanBaseSpeed * 0.5,
             vy: -phys.oceanEcPolewardDrift, 
-            strength: 2.0, age: 0, type: 'EC_N'
+            strength: 2.0, type: 'EC_N'
         });
         
         ecAgents.push({
@@ -337,7 +396,7 @@ export const computeOceanCurrents = (
             x: ip.x, y: ip.y,
             vx: -phys.oceanBaseSpeed * 0.5,
             vy: phys.oceanEcPolewardDrift,
-            strength: 2.0, age: 0, type: 'EC_S'
+            strength: 2.0, type: 'EC_S'
         });
     }
 
@@ -355,142 +414,161 @@ export const computeOceanCurrents = (
         if (activeAgents.length === 0) break;
 
         for (const agent of activeAgents) {
-            agent.age++;
-            const { dist, gx, gy } = getEnvironment(agent.x, agent.y);
-
-            // Pruning
-            if (agent.age > 10) {
+            
+            if (agentPoints[agent.id] && agentPoints[agent.id].length > 5) {
                  if (updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy)) {
                      agent.active = false;
                      continue; 
                  }
             }
 
-            // Physics
-            let baseAx = -phys.oceanBaseSpeed * 0.05;
-            const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
-            const baseItczLat = itcz[lonIdx];
-            
-            let targetLat = baseItczLat;
-            if (agent.type === 'EC_N') targetLat += ecSeparation; 
-            else targetLat -= ecSeparation; 
-            
-            const targetY = getRowFromLat(targetLat);
-            const errorY = targetY - agent.y; 
-            
-            const k = phys.oceanEcPatternForce;
-            const criticalDamping = 2.0 * Math.sqrt(k);
-            let currentDamping = phys.oceanEcDamping;
-            
-            if (Math.abs(errorY) < 3.0) { 
-                 const factor = (3.0 - Math.abs(errorY)) / 3.0; 
-                 const targetDamping = Math.max(currentDamping, criticalDamping * 1.5);
-                 currentDamping = currentDamping * (1 - factor) + targetDamping * factor;
-            }
+            let isDead = false;
+            for(let ss=0; ss<SUB_STEPS; ss++) {
 
-            const pTerm = errorY * k;
-            const dTerm = -agent.vy * currentDamping;
-            const ayControl = pTerm + dTerm;
-            const currentLat = getLatFromRow(agent.y);
-            const latDiff = Math.abs(currentLat - targetLat);
-            
-            if (dist > -100 && latDiff > 2.5) {
-                 baseAx *= 0.1; 
-            }
+                // Physics: Control towards Target Latitude
+                let baseAx = -phys.oceanBaseSpeed * 0.05;
+                const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
+                const baseItczLat = itcz[lonIdx];
+                
+                let targetLat = baseItczLat;
+                if (agent.type === 'EC_N') targetLat += ecSeparation; 
+                else targetLat -= ecSeparation; 
+                
+                const targetY = getRowFromLat(targetLat);
+                const errorY = targetY - agent.y; 
+                
+                const k = phys.oceanEcPatternForce;
+                const criticalDamping = 2.0 * Math.sqrt(k);
+                let currentDamping = phys.oceanEcDamping;
+                
+                if (Math.abs(errorY) < 3.0) { 
+                     const factor = (3.0 - Math.abs(errorY)) / 3.0; 
+                     const targetDamping = Math.max(currentDamping, criticalDamping * 1.5);
+                     currentDamping = currentDamping * (1 - factor) + targetDamping * factor;
+                }
 
-            let nvx = agent.vx + baseAx;
-            let nvy = agent.vy + ayControl;
+                const pTerm = errorY * k;
+                const dTerm = -agent.vy * currentDamping;
+                const ayControl = pTerm + dTerm;
 
-            // Wall Sliding & Impact Detection for EC
-            if (dist > 0) {
-                const len = Math.sqrt(gx*gx + gy*gy);
-                if (len > 0.0001) {
-                    const nx = gx / len;
-                    const ny = gy / len;
-                    const dot = nvx * nx + nvy * ny;
-                    if (dot > 0) {
-                        nvx = nvx - dot * nx;
-                        nvy = nvy - dot * ny;
-                        
-                        // EC Impact Logic: 
-                        // If hitting wall while moving West, record impact
-                        if (!agent.hasTriggeredImpact) {
-                             agent.hasTriggeredImpact = true;
+                let nvx = agent.vx + baseAx;
+                let nvy = agent.vy + ayControl;
+
+                const { dist: distOld } = getEnvironment(agent.x, agent.y);
+                const nextX = agent.x + nvx * DT;
+                const nextY = agent.y + nvy * DT;
+                const { dist: distNew, gx, gy } = getEnvironment(nextX, nextY);
+
+                // Force Field Repulsion (Soft)
+                if (distNew > -50) { 
+                    const gradLen = Math.sqrt(gx*gx + gy*gy);
+                    if (gradLen > 0.0001) {
+                        const nx = gx / gradLen;
+                        const ny = gy / gradLen;
+                        const repulsion = 0.8 * (1.0 - (distNew / -50)); 
+                        nvx -= nx * repulsion;
+                        nvy -= ny * repulsion;
+                    }
+                }
+
+                // Hard Collision
+                if (distNew > 0 && distOld <= 0) {
+                     // Ray-marching hit detection
+                    let tLow = 0, tHigh = 1;
+                    let hitX = agent.x, hitY = agent.y;
+                    for(let k=0; k<4; k++) {
+                        const tMid = (tLow + tHigh) * 0.5;
+                        const mx = agent.x + (nextX - agent.x) * tMid;
+                        const my = agent.y + (nextY - agent.y) * tMid;
+                        const mEnv = getEnvironment(mx, my);
+                        if (mEnv.dist > 0) tHigh = tMid;
+                        else tLow = tMid;
+                        hitX = mx; hitY = my;
+                    }
+
+                    const { gx: hgx, gy: hgy } = getEnvironment(hitX, hitY);
+                    const gradLen = Math.sqrt(hgx*hgx + hgy*hgy);
+                    const nx = gradLen > 0 ? hgx / gradLen : 0;
+                    const ny = gradLen > 0 ? hgy / gradLen : 0;
+                    
+                    const vDotN = nvx * nx + nvy * ny;
+                    
+                    if (vDotN > 0.05) {
+                        // Impact Recording for EC
+                        if (Math.random() < 0.1) {
                              impactResults.push({
-                                 x: agent.x, y: agent.y,
-                                 lat: getLatFromRow(agent.y),
-                                 lon: getLonFromCol(agent.x),
+                                 x: hitX, y: hitY,
+                                 lat: getLatFromRow(hitY),
+                                 lon: getLonFromCol(hitX),
                                  type: 'EC'
                              });
                         }
-
-                        nvx *= 0.99;
-                        nvy *= 0.99;
                         
-                        if (nvx > 0.1) {
-                            agent.active = false;
+                        // Slide with friction
+                        nvx = nvx - vDotN * nx;
+                        nvy = nvy - vDotN * ny;
+                        nvx *= 0.9;
+                        nvy *= 0.9;
+                        
+                        agent.x = hitX - nx * 0.1;
+                        agent.y = hitY - ny * 0.1;
 
-                            // DIAGNOSTIC: Infant Death Detection
-                            // If EC dies very young due to wall collision, it means spawn was bad.
-                            if (agent.age < 12) {
-                                const currentSpeed = Math.sqrt(nvx*nvx + nvy*nvy);
-                                diagnostics.push({
-                                    type: 'EC_INFANT_DEATH',
-                                    x: agent.x, y: agent.y,
-                                    lat: getLatFromRow(agent.y),
-                                    lon: getLonFromCol(agent.x),
-                                    age: agent.age,
-                                    message: `Immediate Wall Collision (Speed=${currentSpeed.toFixed(2)}, Vx=${nvx.toFixed(2)})`
-                                });
-                            }
-
-                            continue;
-                        }
+                    } else {
+                        // Just Slide
+                        nvx = nvx - vDotN * nx;
+                        nvy = nvy - vDotN * ny;
+                        agent.x = hitX - nx * 0.1;
+                        agent.y = hitY - ny * 0.1;
                     }
+                } else if (distNew > 0) {
+                     // Inside recovery
+                    const gradLen = Math.sqrt(gx*gx + gy*gy);
+                    if (gradLen > 0.0001) {
+                        const nx = gx / gradLen;
+                        const ny = gy / gradLen;
+                        const pushOut = distNew + 0.1;
+                        agent.x -= nx * pushOut;
+                        agent.y -= ny * pushOut;
+                    } else {
+                        agent.active = false;
+                        isDead = true;
+                        break;
+                    }
+                } else {
+                     agent.x = nextX;
+                     agent.y = nextY;
                 }
-                if (dist > 50.0) {
-                     agent.active = false;
-                     // DIAGNOSTIC: Deep Inland Death
-                     if (agent.age < 12) {
-                        diagnostics.push({
-                            type: 'EC_INFANT_DEATH',
-                            x: agent.x, y: agent.y,
-                            lat: getLatFromRow(agent.y),
-                            lon: getLonFromCol(agent.x),
-                            age: agent.age,
-                            message: `Spawned Deep Inland (Dist=${dist.toFixed(1)})`
-                        });
-                    }
-                     continue;
+                
+                const speed = Math.sqrt(nvx*nvx + nvy*nvy);
+                const maxSpeed = phys.oceanBaseSpeed * 2.0;
+                if (speed > maxSpeed) {
+                    nvx = (nvx / speed) * maxSpeed;
+                    nvy = (nvy / speed) * maxSpeed;
+                }
+                
+                if (speed < 0.01) {
+                    agent.active = false;
+                    isDead = true;
+                    break;
+                }
+
+                agent.vx = nvx;
+                agent.vy = nvy;
+
+                if (Math.abs(getLatFromRow(agent.y)) > 85) { 
+                    agent.active = false; 
+                    isDead = true;
+                    break; 
                 }
             }
             
-            const speed = Math.sqrt(nvx*nvx + nvy*nvy);
-            const maxSpeed = phys.oceanBaseSpeed * 2.0;
-            if (speed > maxSpeed) {
-                nvx = (nvx / speed) * maxSpeed;
-                nvy = (nvy / speed) * maxSpeed;
-            }
-            if (speed < 0.001) {
-                agent.active = false;
-                continue;
-            }
-
-            agent.vx = nvx;
-            agent.vy = nvy;
-            const nextX = agent.x + agent.vx * DT;
-            const nextY = agent.y + agent.vy * DT;
-            const nextLat = getLatFromRow(nextY);
-            if (Math.abs(nextLat) > 85) { agent.active = false; continue; }
-
-            agent.x = nextX;
-            agent.y = nextY;
+            if (isDead) continue;
             
             ecPoints[agent.id].push({
-                x: nextX, y: nextY,
-                lon: getLonFromCol(nextX),
-                lat: getLatFromRow(nextY),
-                vx: nvx, vy: nvy
+                x: agent.x, y: agent.y,
+                lon: getLonFromCol(agent.x),
+                lat: getLatFromRow(agent.y),
+                vx: agent.vx, vy: agent.vy
             });
         }
     }

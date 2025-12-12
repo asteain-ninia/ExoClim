@@ -1,10 +1,10 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
 import Controls from './components/Controls';
 import MapVisualizer from './components/MapVisualizer';
 import Charts from './components/Charts';
 import TestOverlay from './components/TestOverlay';
+import OceanDebugView from './components/OceanDebugView'; // New Import
 import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_CONFIG, DEFAULT_PHYSICS_PARAMS } from './constants';
 import { runSimulation } from './services/climateEngine';
 import { initializeGrid } from './services/geography';
@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [loadingLabel, setLoadingLabel] = useState("初期化中...");
   const [showTests, setShowTests] = useState(false);
+  const [showOceanDebug, setShowOceanDebug] = useState(false); // New State
   
   // 'annual' or 0 (Jan) or 6 (July)
   const [displayMonth, setDisplayMonth] = useState<'annual' | 0 | 6>('annual');
@@ -107,6 +108,17 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-full bg-gray-950 text-gray-100 font-sans relative overflow-hidden">
       {showTests && <TestOverlay onClose={() => setShowTests(false)} currentResult={result} />}
+      
+      {/* New Debug Overlay */}
+      {showOceanDebug && result && (
+          <OceanDebugView 
+             grid={result.grid}
+             itczLines={result.itczLines}
+             config={config}
+             phys={phys}
+             onClose={() => setShowOceanDebug(false)}
+          />
+      )}
 
       {/* Top Section: Map & Charts */}
       <div className="flex-1 flex flex-row min-h-0">
@@ -264,6 +276,14 @@ const App: React.FC = () => {
                <span className="hidden sm:inline hover:text-gray-300 transition-colors">React 19 + D3.js + Recharts</span>
           </div>
           <div className="flex gap-4 items-center">
+                <button 
+                    onClick={() => setShowOceanDebug(true)}
+                    className="text-[10px] font-bold text-gray-400 hover:text-red-400 hover:underline flex items-center gap-1.5 transition-colors"
+                >
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></span>
+                    海流デバッグ
+                </button>
+                <span className="hidden sm:inline w-px h-3 bg-gray-800"></span>
                 <button 
                     onClick={() => setShowTests(true)}
                     className="text-[10px] font-bold text-gray-400 hover:text-white hover:underline flex items-center gap-1.5 transition-colors"
