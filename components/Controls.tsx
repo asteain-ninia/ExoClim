@@ -1,5 +1,3 @@
-
-
 import React, { useRef, useState, useEffect } from 'react';
 import { PlanetParams, AtmosphereParams, SimulationConfig, CustomMapData, PhysicsParams } from '../types';
 import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_PHYSICS_PARAMS, RESOLUTION_PRESETS } from '../constants';
@@ -35,6 +33,9 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
 
   // Dynamic max buffer based on planet radius (approx 10% of radius or fixed large cap)
   const maxCollisionBuffer = Math.min(2000, Math.floor(planet.radius * 0.2));
+
+  // Dynamic max spawn offset based on planet radius (clamp to reasonable km range)
+  const maxSpawnOffset = Math.floor(planet.radius);
 
   useEffect(() => {
       const errs: string[] = [];
@@ -352,14 +353,16 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                                 onChange={(v:number) => updatePhys('oceanCollisionBuffer', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanCollisionBuffer} />
                              <Slider label="平滑化強度" value={phys.oceanSmoothing} min={0} max={10} step={1} unit="iter" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanSmoothing', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanSmoothing} />
-                             <Slider label="スポーン距離" value={phys.oceanSpawnOffset || 15.0} min={5.0} max={40.0} step={1} unit="cell" color="cyan"
-                                onChange={(v:number) => updatePhys('oceanSpawnOffset', v)} defaultValue={15.0} />
+                             <Slider label="スポーン距離" value={phys.oceanSpawnOffset || 1000} min={0} max={maxSpawnOffset} step={100} unit="km" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanSpawnOffset', v)} defaultValue={1000} />
                         </div>
                     </div>
 
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
                         <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.1 Base Physics</div>
                         <div className="space-y-1">
+                             <Slider label="シミュレーション歩数" value={phys.oceanStreamlineSteps || 500} min={100} max={2000} step={100} unit="steps" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanStreamlineSteps', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanStreamlineSteps} />
                              <Slider label="流速係数" value={phys.oceanBaseSpeed} min={0.5} max={5.0} step={0.1} unit="x" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanBaseSpeed', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanBaseSpeed} />
                              <Slider label="ITCZ引力" value={phys.oceanPatternForce} min={0.01} max={0.5} step={0.01} unit="k" color="cyan"

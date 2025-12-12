@@ -117,6 +117,7 @@ const App: React.FC = () => {
              itczLines={result.itczLines}
              config={config}
              phys={phys}
+             planet={planet}
              onClose={() => setShowOceanDebug(false)}
           />
       )}

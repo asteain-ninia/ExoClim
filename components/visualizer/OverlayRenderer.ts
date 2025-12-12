@@ -1,5 +1,4 @@
 
-
 import { SimulationResult, OceanStreamline, PhysicsParams } from '../../types';
 
 export const drawOverlays = (
@@ -19,6 +18,9 @@ export const drawOverlays = (
 ) => {
     const getX = (colIdx: number) => (colIdx / gridCols) * mapWidth;
     const getY = (lat: number) => (90 - lat) / 180 * (height * zoom);
+    
+    // Helper to normalize grid column index to [0, gridCols)
+    const normalizeCol = (c: number) => ((c % gridCols) + gridCols) % gridCols;
 
     // --- COLLISION WALL CONTOUR ---
     // Draw for Step 2.0 (ocean_collision) and 2.1 (oceanCurrent)
@@ -198,15 +200,24 @@ export const drawOverlays = (
             for(let i=1; i<pts.length; i++) {
                  const p0 = pts[i-1];
                  const p1 = pts[i];
-                 const px0 = getX(p0.x) + xOff;
+                 
+                 // Normalize X coordinates to [0, gridCols) to handle wrap-around and negative drifts
+                 const nx0 = normalizeCol(p0.x);
+                 const nx1 = normalizeCol(p1.x);
+
+                 // Wrap-around check on grid coordinates
+                 if (Math.abs(nx1 - nx0) > gridCols / 2) {
+                     distanceAccumulator = 0;
+                     continue;
+                 }
+
+                 const px0 = getX(nx0) + xOff;
                  const py0 = getY(p0.lat) + offsetY;
-                 const px1 = getX(p1.x) + xOff;
+                 const px1 = getX(nx1) + xOff;
                  const py1 = getY(p1.lat) + offsetY;
 
-                 if (Math.abs(px1 - px0) > mapWidth/2) continue;
-
-                 const colIdx = Math.floor(p1.x) % gridCols;
-                 const itczLat = itczRef[colIdx];
+                 const colIdx = Math.floor(nx1);
+                 const itczLat = itczRef[colIdx] || 0;
                  const vy = p1.vy || 0;
                  let isLeaving = false;
                  
@@ -264,7 +275,11 @@ export const drawOverlays = (
             const impacts = data.impactPoints[m];
             
             const drawImpactMarker = (im: any, xOff: number) => {
-                const x = getX(im.lon >= 0 ? (im.lon + 180) * (gridCols/360) : (im.lon + 180) * (gridCols/360)) + xOff;
+                // Normalize X coordinate (use im.x if available, otherwise estimate from lon)
+                const rawX = im.x !== undefined ? im.x : (im.lon + 180) * (gridCols/360);
+                const normX = normalizeCol(rawX);
+                
+                const x = getX(normX) + xOff;
                 const y = getY(im.lat) + offsetY;
                 const size = 4 * Math.sqrt(zoom);
                 

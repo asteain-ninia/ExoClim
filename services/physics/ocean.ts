@@ -1,5 +1,5 @@
 
-import { GridCell, SimulationConfig, PhysicsParams, OceanStreamline, StreamlinePoint, OceanImpact, OceanDiagnosticLog, DebugSimulationData, DebugFrame, DebugAgentSnapshot } from '../../types';
+import { GridCell, SimulationConfig, PhysicsParams, OceanStreamline, StreamlinePoint, OceanImpact, OceanDiagnosticLog, DebugSimulationData, DebugFrame, DebugAgentSnapshot, PlanetParams } from '../../types';
 
 // Extended Agent Interface for Physics & Debugging
 interface Agent {
@@ -16,9 +16,9 @@ interface Agent {
   state: 'active' | 'dead' | 'stuck' | 'impact' | 'crawling';
   cause?: string;
   age: number;
-  stagnationCounter: number;
-  lastX: number;
-  lastY: number;
+  
+  // Stagnation Detection
+  history: {x: number, y: number}[]; // Store past positions
 }
 
 interface ImpactPointTemp {
@@ -33,6 +33,7 @@ export const computeOceanCurrents = (
   itczLines: number[][],
   phys: PhysicsParams,
   config: SimulationConfig,
+  planet: PlanetParams,
   debugMonth?: number // Optional: If provided, generates DebugSimulationData for this month
 ): { streamlines: OceanStreamline[][], impacts: OceanImpact[][], diagnostics: OceanDiagnosticLog[], debugData?: DebugSimulationData } => {
   const streamlinesByMonth: OceanStreamline[][] = [];
@@ -130,19 +131,28 @@ export const computeOceanCurrents = (
   };
 
   const findSafeSpawnX = (startX: number, y: number): number => {
-      // Backtrack West until safe
-      // Use configured offset or default 15.0 if not set (fallback)
-      const offset = phys.oceanSpawnOffset || 15.0; 
+      // Configured offset in km
+      const offsetKm = phys.oceanSpawnOffset || 1000.0; 
       
+      // Calculate km per cell at this latitude
+      const latDeg = getLatFromRow(y);
+      const latRad = (latDeg * Math.PI) / 180;
+      const planetCircumference = 2 * Math.PI * planet.radius * Math.cos(latRad);
+      const kmPerCell = Math.max(0.1, planetCircumference / cols); // Avoid div by zero
+      
+      // Convert km to cells
+      const offsetCells = offsetKm / kmPerCell;
+      
+      // Backtrack West until safe
       const maxSearch = 60; 
       let currX = startX;
       for(let i=0; i<maxSearch; i++) {
           const env = getEnvironment(currX, y);
-          // Go fairly deep into negative distance (ocean) to avoid immediate collision
-          if (env.dist < -30.0) return currX - offset; 
+          // If we found deep ocean
+          if (env.dist < -30.0) return currX - offsetCells; 
           currX -= 1.0;
       }
-      return startX - (offset + 10.0); 
+      return startX - offsetCells;
   };
 
   // --- Debug Data Holder ---
@@ -187,13 +197,16 @@ export const computeOceanCurrents = (
     };
 
     // --- Time Stepping Config ---
-    const MAX_STEPS = phys.oceanStreamlineSteps;
+    const BASE_MAX_STEPS = phys.oceanStreamlineSteps || 500;
     const SUB_STEPS = 10; 
     const TOTAL_DT = 0.5; 
     const DT = TOTAL_DT / SUB_STEPS;
+    
+    // Stagnation Config
+    const HISTORY_SIZE = 12; // Check position from ~12 frames ago
+    const STAGNATION_THRESHOLD = 0.3; // Distance in grid cells
 
     // --- PASS 1: Equatorial Counter Current (ECC) ---
-    // This part works well, keeping logic mostly same but improving impact detection slightly
     
     let eccAgents: Agent[] = [];
     let nextAgentId = 0;
@@ -216,7 +229,8 @@ export const computeOceanCurrents = (
       if (shouldSpawn) {
           eccAgents.push({
               id: nextAgentId++, active: true, x: c, y: r, vx: phys.oceanBaseSpeed, vy: 0.0, strength: 2.0, type: 'ECC',
-              state: 'active', age: 0, stagnationCounter: 0, lastX: c, lastY: r
+              state: 'active', age: 0, 
+              history: []
           });
       }
     }
@@ -226,11 +240,14 @@ export const computeOceanCurrents = (
     }]);
 
     // ================= ECC LOOP =================
-    for (let step = 0; step < MAX_STEPS; step++) {
+    let stepsUsedECC = 0;
+    for (let step = 0; step < BASE_MAX_STEPS; step++) {
+        stepsUsedECC++;
         const activeAgents = eccAgents.filter(a => a.active);
         const frameSnapshot: DebugAgentSnapshot[] = [];
 
-        if (activeAgents.length === 0 && !isDebugRun) break;
+        // Early exit: Break immediately if everyone is dead, even in debug mode
+        if (activeAgents.length === 0) break;
 
         for (const agent of eccAgents) {
             if (!agent.active && !isDebugRun) continue; 
@@ -242,14 +259,55 @@ export const computeOceanCurrents = (
                 continue;
             }
 
-            // Stagnation Check
-            const moveDist = Math.abs(agent.x - agent.lastX) + Math.abs(agent.y - agent.lastY);
-            if (moveDist < 0.05 * TOTAL_DT) agent.stagnationCounter++;
-            else agent.stagnationCounter = 0;
-            agent.lastX = agent.x; agent.lastY = agent.y;
-            if (agent.stagnationCounter > 20) {
-                 agent.active = false; agent.state = 'stuck'; agent.cause = "Stagnation";
-                 if (agent.type === 'ECC') diagnostics.push({ type: 'ECC_STUCK', x: agent.x, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(agent.x), age: agent.age, message: "ECC Stagnated" });
+            // --- Robust Stagnation Check ---
+            // Update History
+            agent.history.push({ x: agent.x, y: agent.y });
+            if (agent.history.length > HISTORY_SIZE) {
+                agent.history.shift();
+            }
+
+            // Check against historical position
+            let isStuck = false;
+            if (agent.history.length === HISTORY_SIZE) {
+                const oldPos = agent.history[0];
+                const dx = Math.abs(agent.x - oldPos.x);
+                const dy = Math.abs(agent.y - oldPos.y);
+                // Handle wrap-around for X distance
+                const dxWrap = Math.min(dx, cols - dx);
+                
+                const totalDist = dxWrap + dy;
+                
+                if (totalDist < STAGNATION_THRESHOLD) {
+                    isStuck = true;
+                }
+            }
+            
+            if (isStuck) {
+                 const { dist } = getEnvironment(agent.x, agent.y);
+                 
+                 // Treat stagnation as impact to ensure continuity of flow
+                 agent.active = false; 
+                 agent.state = 'impact'; 
+                 agent.cause = `Stagnation (Hist: ${HISTORY_SIZE}, Dist: ${dist.toFixed(0)})`;
+
+                 // Register as Impact
+                 impactResults.push({ x: agent.x, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(agent.x), type: 'ECC' });
+                 
+                 // Spawn EC from here
+                 const safeSpawnX = findSafeSpawnX(agent.x, agent.y);
+                 impactPointsTemp.push({ x: safeSpawnX, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(safeSpawnX) });
+                 
+                 if (agent.type === 'ECC') {
+                     diagnostics.push({ 
+                         type: 'ECC_STUCK', 
+                         x: agent.x, y: agent.y, 
+                         lat: getLatFromRow(agent.y), 
+                         lon: getLonFromCol(agent.x), 
+                         age: agent.age, 
+                         message: `ECC Stagnated at Dist ${dist.toFixed(1)} -> Triggered Impact Logic` 
+                     });
+                 }
+                 continue;
             }
 
             if (agent.active && agentPoints[agent.id].length > 5) {
@@ -278,7 +336,6 @@ export const computeOceanCurrents = (
                     // --- ECC IMPACT CHECK ---
                     if (distNew > 0 && distOld <= 0) {
                         // Impact detected. 
-                        // Find precise hit point
                         let tLow = 0, tHigh = 1; let hitX = agent.x, hitY = agent.y;
                         for(let k=0; k<4; k++) {
                             const tMid = (tLow + tHigh) * 0.5;
@@ -294,8 +351,6 @@ export const computeOceanCurrents = (
                         const ny = gradLen > 0 ? hgy / gradLen : 0;
                         const vDotN = nvx * nx + nvy * ny;
 
-                        // Check if this is a "West Coast" (Land is to the East, GradX > 0)
-                        // ECC flows East (vx > 0). If it hits a wall where GradX > 0, it's a head-on collision.
                         const isHeadOn = (nvx > 0 && hgx > -0.2); 
 
                         if (isHeadOn && vDotN > 0.05) {
@@ -307,13 +362,13 @@ export const computeOceanCurrents = (
                             agent.active = false; agent.state = 'impact'; agent.cause = "Coastal Impact";
                             break; 
                         } else {
-                            // Slide (Glancing blow or odd geometry)
+                            // Slide
                             nvx = nvx - vDotN * nx; nvy = nvy - vDotN * ny;
                             const epsilon = 0.1;
                             agent.x = hitX - nx * epsilon; agent.y = hitY - ny * epsilon;
                         }
                     } else if (distNew > 0) {
-                        // Recovery (already inside)
+                        // Recovery
                         const gradLen = Math.sqrt(gx*gx + gy*gy);
                         if (gradLen > 0.0001) {
                             const nx = gx / gradLen; const ny = gy / gradLen;
@@ -342,7 +397,7 @@ export const computeOceanCurrents = (
             }
         }
         if (isDebugRun) debugFrames.push({ step, agents: frameSnapshot });
-        if (eccAgents.every(a => !a.active) && !isDebugRun) break;
+        if (eccAgents.every(a => !a.active)) break;
     }
 
     // Save Streamlines for ECC
@@ -352,25 +407,21 @@ export const computeOceanCurrents = (
         }
     }
 
-    // --- PASS 2: Equatorial Current (EC) - REFACTORED ---
+    // --- PASS 2: Equatorial Current (EC) ---
     
     let ecAgents: Agent[] = [];
     
-    // Spawn EC agents from impacts
     for (const ip of impactPointsTemp) {
-        // Initial velocity is purely POLEWARD to escape the coast ("Crawl" start)
-        // We do NOT add Westward velocity yet to avoid immediate collision with the coast we just spawned next to.
         const spawnSpeed = phys.oceanBaseSpeed * 0.8;
-        
         ecAgents.push({
             id: nextAgentId++, active: true, x: ip.x, y: ip.y,
             vx: 0, vy: -spawnSpeed, strength: 2.0, type: 'EC_N',
-            state: 'active', age: 0, stagnationCounter: 0, lastX: ip.x, lastY: ip.y
+            state: 'active', age: 0, history: []
         });
         ecAgents.push({
             id: nextAgentId++, active: true, x: ip.x, y: ip.y,
             vx: 0, vy: spawnSpeed, strength: 2.0, type: 'EC_S',
-            state: 'active', age: 0, stagnationCounter: 0, lastX: ip.x, lastY: ip.y
+            state: 'active', age: 0, history: []
         });
     }
 
@@ -382,13 +433,15 @@ export const computeOceanCurrents = (
     }
 
     const startStepPhase2 = debugFrames.length;
+    const stepsRemaining = BASE_MAX_STEPS - stepsUsedECC;
+    const MAX_STEPS_EC = BASE_MAX_STEPS + stepsRemaining;
 
     // ================= EC LOOP =================
-    for (let step = 0; step < MAX_STEPS; step++) {
+    for (let step = 0; step < MAX_STEPS_EC; step++) {
         const activeAgents = ecAgents.filter(a => a.active);
         const frameSnapshot: DebugAgentSnapshot[] = [];
 
-        if (activeAgents.length === 0 && !isDebugRun) break;
+        if (activeAgents.length === 0) break;
 
         for (const agent of ecAgents) {
             if (!agent.active && !isDebugRun) continue;
@@ -400,30 +453,48 @@ export const computeOceanCurrents = (
                 continue;
             }
 
-            // Pruning
             if (agentPoints[agent.id] && agentPoints[agent.id].length > 5 && !isDebugRun) {
                  if (updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy)) {
                      agent.active = false; agent.state = 'dead'; agent.cause = "Merged/Pruned";
                  }
             }
 
-            // Stagnation
-            const moveDist = Math.abs(agent.x - agent.lastX) + Math.abs(agent.y - agent.lastY);
-            if (moveDist < 0.05 * TOTAL_DT) agent.stagnationCounter++;
-            else agent.stagnationCounter = 0;
-            agent.lastX = agent.x; agent.lastY = agent.y;
+             // --- Robust Stagnation Check ---
+            agent.history.push({ x: agent.x, y: agent.y });
+            if (agent.history.length > HISTORY_SIZE) {
+                agent.history.shift();
+            }
+
+            let isStuck = false;
+            if (agent.history.length === HISTORY_SIZE) {
+                const oldPos = agent.history[0];
+                const dx = Math.abs(agent.x - oldPos.x);
+                const dy = Math.abs(agent.y - oldPos.y);
+                const dxWrap = Math.min(dx, cols - dx);
+                const totalDist = dxWrap + dy;
+                
+                if (totalDist < STAGNATION_THRESHOLD) {
+                    isStuck = true;
+                }
+            }
             
-            if (agent.stagnationCounter > 30) {
-                agent.active = false; agent.state = 'stuck'; agent.cause = "Stagnation";
+            if (isStuck) {
+                const { dist } = getEnvironment(agent.x, agent.y);
+                
+                agent.active = false; 
+                agent.state = 'impact'; // Treat stagnation as arrival/impact
+                agent.cause = `Stagnation (Hist: ${HISTORY_SIZE}, Dist: ${dist.toFixed(0)})`;
+                
+                // Add to visual impacts
+                impactResults.push({ x: agent.x, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(agent.x), type: 'EC' });
+                continue;
             }
 
             if (agent.active) {
                 for(let ss=0; ss<SUB_STEPS; ss++) {
-                    // --- 1. Base Forces ---
-                    // Target Latitude
                     const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
                     const baseItczLat = itcz[lonIdx];
-                    const ecSeparation = phys.oceanEcLatGap; // User tunable
+                    const ecSeparation = phys.oceanEcLatGap; 
                     
                     let targetLat = baseItczLat;
                     if (agent.type === 'EC_N') targetLat += ecSeparation; 
@@ -433,16 +504,9 @@ export const computeOceanCurrents = (
                     const currentLat = getLatFromRow(agent.y);
                     const latDiff = Math.abs(currentLat - targetLat);
 
-                    // Determine Mode: Crawl or Flow?
-                    // If we are far from target lat and near coast, we CRAWL.
-                    // If we are near target lat or in open ocean, we FLOW.
                     const { dist: currentDist, gx: currentGx, gy: currentGy } = getEnvironment(agent.x, agent.y);
-                    const isNearCoast = currentDist > -60; // Fairly wide buffer for sensing coast
+                    const isNearCoast = currentDist > -60;
                     const isFarFromTarget = latDiff > 2.0;
-                    
-                    // Crawl Mode is active when we are stuck against the spawning continent
-                    // Land is to the Right (gx > 0) means we are on the West coast of a continent (East side of ocean).
-                    // We need to escape North/South.
                     const isTrappedOnWestCoast = isNearCoast && currentGx > -0.2; 
 
                     let ax = 0;
@@ -450,63 +514,46 @@ export const computeOceanCurrents = (
 
                     if (isTrappedOnWestCoast && isFarFromTarget) {
                         agent.state = 'crawling';
-                        // --- CRAWL PHYSICS ---
-                        // Ignore Westward pull. Focus on alignment with coast tangent towards target.
-                        // Tangent: (-gy, gx) or (gy, -gx). We want the one pointing towards targetY.
-                        
                         const gradLen = Math.sqrt(currentGx*currentGx + currentGy*currentGy);
                         if (gradLen > 0.0001) {
                             const nx = currentGx / gradLen;
                             const ny = currentGy / gradLen;
-                            // Tangent vectors
                             const tx1 = -ny; const ty1 = nx;
                             const tx2 = ny;  const ty2 = -nx;
                             
-                            // Choose tangent that brings us closer to targetY
                             const dy1 = targetY - agent.y;
-                            // Dot product with vertical direction
                             const dot1 = ty1 * (dy1 > 0 ? 1 : -1); 
                             const dot2 = ty2 * (dy1 > 0 ? 1 : -1);
                             
                             const bestTx = dot1 > dot2 ? tx1 : tx2;
                             const bestTy = dot1 > dot2 ? ty1 : ty2;
                             
-                            // Accelerate along tangent
                             const crawlSpeed = phys.oceanBaseSpeed * 1.2;
                             ax = (bestTx * crawlSpeed - agent.vx) * 0.2; 
                             ay = (bestTy * crawlSpeed - agent.vy) * 0.2;
                             
-                            // Add slight repulsion to not scrape wall
                             ax -= nx * 0.1; 
                             ay -= ny * 0.1;
                         } else {
-                            // Fallback if gradient weak but dist high
                             ay = (targetY - agent.y) * 0.05;
                         }
 
                     } else {
                         agent.state = 'active'; // Flowing
-                        // --- FLOW PHYSICS ---
-                        // 1. Westward Acceleration
                         const baseWestwardSpeed = -phys.oceanBaseSpeed * 1.0;
                         ax = (baseWestwardSpeed - agent.vx) * 0.05;
 
-                        // 2. Latitude Attraction (PID-like)
                         const k = phys.oceanEcPatternForce;
                         const errorY = targetY - agent.y;
                         const damping = phys.oceanEcDamping;
                         const ayControl = errorY * k - agent.vy * damping;
                         ay = ayControl;
 
-                        // 3. Obstacle Avoidance (Bypass)
-                        // If we are flowing West and detect Land to the West (Left, gx < 0), it's a hard wall (Asia).
-                        // If we detect Land to the East (Right, gx > 0), it's an island or promontory we are passing.
                         if (isNearCoast) {
                             const gradLen = Math.sqrt(currentGx*currentGx + currentGy*currentGy);
                             if (gradLen > 0.0001) {
                                 const nx = currentGx / gradLen;
                                 const ny = currentGy / gradLen;
-                                // Repulsion
                                 const repulseStrength = 0.5 * (1.0 - (currentDist / -60));
                                 ax -= nx * repulseStrength;
                                 ay -= ny * repulseStrength;
@@ -514,81 +561,49 @@ export const computeOceanCurrents = (
                         }
                     }
 
-                    // Integrate
                     let nvx = agent.vx + ax;
                     let nvy = agent.vy + ay;
                     const nextX = agent.x + nvx * DT;
                     const nextY = agent.y + nvy * DT;
 
-                    // --- COLLISION RESOLUTION ---
                     const { dist: distNew, gx: newGx, gy: newGy } = getEnvironment(nextX, nextY);
 
                     if (distNew > 0) {
-                        // We hit land. 
-                        // Analyze Gradient at impact to decide fate.
                         const gradLen = Math.sqrt(newGx*newGx + newGy*newGy);
                         const nx = gradLen > 0 ? newGx / gradLen : 0;
                         const ny = gradLen > 0 ? newGy / gradLen : 0;
                         
-                        // Check orientation of the wall relative to flow
-                        // We are moving West (nvx < 0).
-                        // If Wall Normal X is Positive (Land is East), we hit the back of something -> SLIDE.
-                        // If Wall Normal X is Negative (Land is West), we hit the front of something -> IMPACT/DIE.
-                        
-                        // Refined check:
-                        // "Arrival" means hitting a Westward wall (East coast of continent).
-                        // Normal points out of land. So Normal X should be POSITIVE if Land is to the East (Right).
-                        // Wait. 
-                        // Field is Distance From Coast (+ Land, - Ocean). Gradient points uphill (towards Deep Land).
-                        // So Normal points TOWARDS LAND.
-                        // If Land is West (Left), Normal X is Negative.
-                        // If Land is East (Right), Normal X is Positive.
-                        
-                        // If we are moving West (nvx < 0):
-                        // - Hitting Land to the West (nx < 0) -> Head on collision. IMPACT.
-                        // - Hitting Land to the East (nx > 0) -> Should not happen unless we got turned around? 
-                        //   Actually, if we are in a bay, we might hit a North/South facing wall.
-                        
-                        const isArrival = (nvx < -0.1 && nx < -0.2); // Strong indication of Westward Land
+                        const isArrival = (nvx < -0.1 && nx < -0.2); 
 
                         if (isArrival) {
-                            // Valid Arrival at West Boundary
-                            if (Math.random() < 0.2) { // Sample points to avoid clutter
+                            if (Math.random() < 0.2) { 
                                 impactResults.push({ x: nextX, y: nextY, lat: getLatFromRow(nextY), lon: getLonFromCol(nextX), type: 'EC' });
                             }
                             agent.active = false; agent.state = 'dead'; agent.cause = "Arrival (West Coast)";
                             
-                            // Debug Infant Death
                             if (agent.age < 20) {
                                 diagnostics.push({ type: 'EC_INFANT_DEATH', x: agent.x, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(agent.x), age: agent.age, message: "Early Arrival (Check Spawn/Gap)" });
                             }
                             break;
                         } else {
-                            // Obstacle / Glancing Blow / Spawning Wall
-                            // SLIDE along wall
                             const vDotN = nvx * nx + nvy * ny;
                             nvx = nvx - vDotN * nx; 
                             nvy = nvy - vDotN * ny;
                             
-                            // Friction
                             nvx *= 0.9; nvy *= 0.9;
                             
-                            // Push out
                             const pushOut = 0.1;
                             agent.x = nextX - nx * pushOut;
                             agent.y = nextY - ny * pushOut;
                             
-                            // Force update velocity to reflect slide
                             agent.vx = nvx; agent.vy = nvy;
-                            continue; // Skip position update to allow push out to take effect next frame relative to current
+                            continue; 
                         }
                     } else {
-                        // No collision
                         agent.x = nextX; agent.y = nextY;
                         agent.vx = nvx; agent.vy = nvy;
                     }
 
-                    // Speed Clamp
                     const speed = Math.sqrt(agent.vx*agent.vx + agent.vy*agent.vy);
                     const maxSpeed = phys.oceanBaseSpeed * 3.0;
                     if (speed > maxSpeed) {
@@ -596,7 +611,6 @@ export const computeOceanCurrents = (
                         agent.vy = (agent.vy / speed) * maxSpeed;
                     }
                     
-                    // Boundary Check
                     if (Math.abs(getLatFromRow(agent.y)) > 88) {
                         agent.active = false; agent.state = 'dead'; agent.cause = "Polar Exit"; break;
                     }
@@ -619,10 +633,9 @@ export const computeOceanCurrents = (
         }
         
         if (isDebugRun) debugFrames.push({ step: startStepPhase2 + step, agents: frameSnapshot });
-        if (ecAgents.every(a => !a.active) && !isDebugRun) break;
+        if (ecAgents.every(a => !a.active)) break;
     }
 
-    // Save EC Streamlines
     for(const agent of ecAgents) {
         if (ecPoints[agent.id] && ecPoints[agent.id].length > 5) {
             finishedLines.push({ points: ecPoints[agent.id], strength: agent.strength, type: agent.type === 'EC_N' ? 'split_n' : 'split_s' });
@@ -632,7 +645,7 @@ export const computeOceanCurrents = (
     if (isDebugRun) {
         collectedDebugData = {
             frames: debugFrames,
-            collisionField: collisionField, // Export full field for viz
+            collisionField: collisionField,
             width: cols,
             height: rows,
             itczLine: itcz
@@ -643,7 +656,6 @@ export const computeOceanCurrents = (
     impactsByMonth[m] = impactResults;
   }
   
-  // Fill empty months
   for(let m=0; m<12; m++) {
       if (!streamlinesByMonth[m]) {
           streamlinesByMonth[m] = [];

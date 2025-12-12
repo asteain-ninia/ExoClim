@@ -69,7 +69,7 @@ export const runSimulation = async (
   await new Promise(r => setTimeout(r, 50));
   
   onProgress(50, "Step 2.1: Ocean Currents...", 'oceanCurrent');
-  const oceanRes = computeOceanCurrents(grid, circulationRes.itczLines, phys, config);
+  const oceanRes = computeOceanCurrents(grid, circulationRes.itczLines, phys, config, planet);
 
   await new Promise(r => setTimeout(r, 50));
 

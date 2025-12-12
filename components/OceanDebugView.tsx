@@ -1,5 +1,6 @@
+
 import React, { useEffect, useRef, useState } from 'react';
-import { DebugSimulationData, DebugAgentSnapshot } from '../types';
+import { DebugSimulationData, DebugAgentSnapshot, PlanetParams } from '../types';
 import { computeOceanCurrents } from '../services/physics/ocean'; // Unified Engine
 import { SimulationConfig, PhysicsParams } from '../types';
 
@@ -8,10 +9,11 @@ interface Props {
     itczLines: number[][];
     config: SimulationConfig;
     phys: PhysicsParams;
+    planet: PlanetParams; // Added prop
     onClose: () => void;
 }
 
-const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, onClose }) => {
+const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [debugData, setDebugData] = useState<DebugSimulationData | null>(null);
     const [currentStep, setCurrentStep] = useState(0);
@@ -29,7 +31,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, onClos
         setLoading(true);
         
         const timer = setTimeout(() => {
-            const result = computeOceanCurrents(grid, itczLines, phys, config, targetMonth);
+            const result = computeOceanCurrents(grid, itczLines, phys, config, planet, targetMonth);
             if (result.debugData) {
                 setDebugData(result.debugData);
                 setCurrentStep(0);
@@ -39,7 +41,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, onClos
         }, 100);
         
         return () => clearTimeout(timer);
-    }, [grid, itczLines, config, phys, targetMonth]);
+    }, [grid, itczLines, config, phys, planet, targetMonth]);
 
     // Playback Loop
     useEffect(() => {
@@ -67,99 +69,115 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, onClos
 
         ctx.clearRect(0, 0, mapSize.width, mapSize.height);
 
-        // 1. Draw Map (Collision Field)
+        // 1. Draw Map (Collision Field) - Looped
         const cols = debugData.width;
         const rows = debugData.height;
         const cellW = mapSize.width / cols;
         const cellH = mapSize.height / rows;
 
-        for(let r=0; r<rows; r++) {
-            for(let c=0; c<cols; c++) {
-                const idx = r * cols + c;
-                const val = debugData.collisionField[idx];
-                
-                // Color Code:
-                // > 0 (Wall/Land) = Red tint
-                // <= 0 (Ocean) = Blue tint
-                if (val > 0) {
-                    const intensity = Math.min(1, val / 500);
-                    ctx.fillStyle = `rgba(${100 + 155*intensity}, 50, 50, 1)`;
-                } else {
-                    const intensity = Math.min(1, Math.abs(val) / 2000);
-                    ctx.fillStyle = `rgba(10, 20, ${50 + 100*intensity}, 1)`;
+        // Render helper
+        const renderMap = (offsetX: number) => {
+            for(let r=0; r<rows; r++) {
+                for(let c=0; c<cols; c++) {
+                    const idx = r * cols + c;
+                    const val = debugData.collisionField[idx];
+                    
+                    if (val > 0) {
+                        const intensity = Math.min(1, val / 500);
+                        ctx.fillStyle = `rgba(${100 + 155*intensity}, 50, 50, 1)`;
+                    } else {
+                        const intensity = Math.min(1, Math.abs(val) / 2000);
+                        ctx.fillStyle = `rgba(10, 20, ${50 + 100*intensity}, 1)`;
+                    }
+                    ctx.fillRect(c*cellW + offsetX, r*cellH, cellW, cellH);
                 }
-                ctx.fillRect(c*cellW, r*cellH, cellW, cellH);
             }
-        }
+        };
+
+        // Render Center, Left, Right for Loop
+        renderMap(0);
+        renderMap(-mapSize.width);
+        renderMap(mapSize.width);
         
         // 2. Draw ITCZ Line
         ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
         ctx.setLineDash([4, 2]);
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        for(let c=0; c<cols; c++) {
-            const lat = debugData.itczLine[c];
-            const r = (90 - lat) / 180 * (rows - 1);
-            const x = c * cellW;
-            const y = r * cellH;
-            if(c===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-        }
-        ctx.stroke();
+        
+        const renderITCZ = (offsetX: number) => {
+            ctx.beginPath();
+            for(let c=0; c<cols; c++) {
+                const lat = debugData.itczLine[c];
+                const r = (90 - lat) / 180 * (rows - 1);
+                const x = c * cellW + offsetX;
+                const y = r * cellH;
+                if(c===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+            }
+            ctx.stroke();
+        };
+        renderITCZ(0);
+        renderITCZ(-mapSize.width);
+        renderITCZ(mapSize.width);
+        
         ctx.setLineDash([]);
 
         // 3. Draw Agents
         const frame = debugData.frames[currentStep];
         if (!frame) return;
 
-        frame.agents.forEach(agent => {
-            const x = agent.x * cellW;
-            const y = agent.y * cellH;
-            
-            ctx.beginPath();
-            
-            // Color Code
-            if (agent.state === 'active' || agent.state === 'crawling') {
-                if (agent.state === 'crawling') ctx.fillStyle = '#d946ef'; // Magenta for crawling
-                else if (agent.type === 'ECC') ctx.fillStyle = '#ff4400'; // Warm
-                else ctx.fillStyle = '#00ccff'; // Cold
-                
-                // Size by velocity
-                const speed = Math.sqrt(agent.vx*agent.vx + agent.vy*agent.vy);
-                const r = Math.max(1.5, Math.min(4, speed * 2));
-                ctx.arc(x, y, r, 0, Math.PI*2);
-            } else if (agent.state === 'impact') {
-                ctx.fillStyle = '#ffffff';
-                ctx.arc(x, y, 4, 0, Math.PI*2);
-                // Draw X
-                ctx.strokeStyle = 'red';
-                ctx.lineWidth = 2;
-                ctx.moveTo(x-3, y-3); ctx.lineTo(x+3, y+3);
-                ctx.moveTo(x+3, y-3); ctx.lineTo(x-3, y+3);
-                ctx.stroke();
-            } else if (agent.state === 'stuck') {
-                ctx.fillStyle = 'yellow';
-                ctx.arc(x, y, 3, 0, Math.PI*2);
-                // Flash ring
-                if (Math.floor(Date.now() / 200) % 2 === 0) {
-                     ctx.strokeStyle = 'orange';
-                     ctx.lineWidth = 1;
-                     ctx.stroke();
-                }
-            } else if (agent.state === 'dead') {
-                ctx.fillStyle = '#555'; // Greyed out
-                ctx.arc(x, y, 1, 0, Math.PI*2);
-            }
-            
-            ctx.fill();
+        const renderAgent = (agent: DebugAgentSnapshot, offsetX: number) => {
+             const x = agent.x * cellW + offsetX;
+             const y = agent.y * cellH;
+             
+             ctx.beginPath();
+             if (agent.state === 'active' || agent.state === 'crawling') {
+                 if (agent.state === 'crawling') ctx.fillStyle = '#d946ef'; 
+                 else if (agent.type === 'ECC') ctx.fillStyle = '#ff4400'; 
+                 else ctx.fillStyle = '#00ccff'; 
+                 
+                 const speed = Math.sqrt(agent.vx*agent.vx + agent.vy*agent.vy);
+                 const r = Math.max(1.5, Math.min(4, speed * 2));
+                 ctx.arc(x, y, r, 0, Math.PI*2);
+             } else if (agent.state === 'impact') {
+                 ctx.fillStyle = '#ffffff';
+                 ctx.arc(x, y, 4, 0, Math.PI*2);
+                 ctx.strokeStyle = 'red';
+                 ctx.lineWidth = 2;
+                 ctx.moveTo(x-3, y-3); ctx.lineTo(x+3, y+3);
+                 ctx.moveTo(x+3, y-3); ctx.lineTo(x-3, y+3);
+                 ctx.stroke();
+             } else if (agent.state === 'stuck') {
+                 ctx.fillStyle = 'yellow';
+                 ctx.arc(x, y, 3, 0, Math.PI*2);
+             } else if (agent.state === 'dead') {
+                 ctx.fillStyle = '#555';
+                 ctx.arc(x, y, 1, 0, Math.PI*2);
+             }
+             ctx.fill();
 
-            // Vector line
-            if (agent.state === 'active' || agent.state === 'crawling') {
-                ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-                ctx.lineWidth = 1;
-                ctx.moveTo(x, y);
-                ctx.lineTo(x + agent.vx * 3, y + agent.vy * 3);
-                ctx.stroke();
-            }
+             if (agent.state === 'active' || agent.state === 'crawling') {
+                 ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                 ctx.lineWidth = 1;
+                 ctx.beginPath();
+                 ctx.moveTo(x, y);
+                 ctx.lineTo(x + agent.vx * 3, y + agent.vy * 3);
+                 ctx.stroke();
+             }
+        };
+
+        frame.agents.forEach(originalAgent => {
+            // Coordinate Normalization for Loop Rendering
+            // Use robust modulo to ensure result is always [0, cols) even for large negative numbers
+            const normX = ((originalAgent.x % cols) + cols) % cols;
+
+            // Create a view-only agent with normalized coordinates
+            const agent = { ...originalAgent, x: normX };
+
+            // Render Unconditionally in 3 Positions (Center, Left Loop, Right Loop)
+            // This ensures no agents disappear at boundaries regardless of coordinate logic
+            renderAgent(agent, 0);
+            renderAgent(agent, -mapSize.width);
+            renderAgent(agent, mapSize.width);
         });
 
     }, [debugData, currentStep, mapSize]);
@@ -179,18 +197,26 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, onClos
         const frame = debugData.frames[currentStep];
         if (!frame) return;
 
-        // Find nearest agent
         let nearest: DebugAgentSnapshot | null = null;
         let minD = 100; // px sq
 
         frame.agents.forEach(a => {
-            const ax = a.x * cellW;
+            // Normalize for hit testing too
+            const normX = ((a.x % cols) + cols) % cols;
+
+            const ax = normX * cellW;
             const ay = a.y * cellH;
-            const d = (ax-mouseX)**2 + (ay-mouseY)**2;
-            if (d < minD) {
-                minD = d;
-                nearest = a;
-            }
+            
+            // Check main, left, right instances
+            const offsets = [0, mapSize.width, -mapSize.width];
+            
+            offsets.forEach(off => {
+                 const d = (ax + off - mouseX)**2 + (ay - mouseY)**2;
+                 if (d < minD) {
+                     minD = d;
+                     nearest = a;
+                 }
+            });
         });
         setHoverInfo(nearest);
     };

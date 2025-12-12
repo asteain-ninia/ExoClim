@@ -64,7 +64,7 @@ export interface PhysicsParams {
   oceanEcDamping: number; // Damping factor to reduce oscillation (Derivative Gain D)
   oceanEcPolewardDrift: number; // Initial drift speed towards poles after split.
   oceanEcLatGap: number; // Degrees. Separation between ITCZ and EC lines.
-  oceanSpawnOffset: number; // Grid cells. Distance to spawn EC agents away from the coast impact point.
+  oceanSpawnOffset: number; // km. Distance to spawn EC agents away from the coast impact point.
 
   // 2.0 Collision Tuning
   oceanCollisionBuffer: number; // km. Distance from coast to trigger collision.
