@@ -69,6 +69,14 @@ export interface PhysicsParams {
   // 2.0 Collision Tuning
   oceanCollisionBuffer: number; // km. Distance from coast to trigger collision.
   oceanSmoothing: number; // Iterations. Smoothing steps for collision map.
+
+  // 2.3 Advanced Flow Tuning (Newly Extracted)
+  oceanSpawnSpeedMultiplier: number; // Multiplier for initial spawn speed (relative to baseSpeed)
+  oceanCrawlSpeedMultiplier: number; // Multiplier for crawling speed along coast
+  oceanMaxSpeedMultiplier: number; // Cap for absolute speed
+  oceanInertiaX: number; // 0.0 - 1.0. How fast X velocity reacts to target speed
+  oceanRepulseStrength: number; // Strength of repulsion when too close to coast
+  oceanImpactThreshold: number; // Dot product threshold to detect head-on collision
 }
 
 // 1-4. Grid & Map

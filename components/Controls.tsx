@@ -1,3 +1,5 @@
+
+
 import React, { useRef, useState, useEffect } from 'react';
 import { PlanetParams, AtmosphereParams, SimulationConfig, CustomMapData, PhysicsParams } from '../types';
 import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_PHYSICS_PARAMS, RESOLUTION_PRESETS } from '../constants';
@@ -342,10 +344,10 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
 
                  <div className="flex justify-between items-center border-b border-cyan-900/50 pb-1 mb-3 mt-4">
                      <h3 className="text-xs font-bold text-cyan-400 uppercase">Step 2: Ocean Currents</h3>
-                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 2.0, 2.1 & 2.2</span>
+                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 2.0 - 2.3</span>
                  </div>
                  
-                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-20">
+                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-20">
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
                         <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.0 Collision & Spawn</div>
                         <div className="space-y-1">
@@ -383,6 +385,22 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                                 onChange={(v:number) => updatePhys('oceanEcLatGap', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcLatGap} />
                              <Slider label="極方向ドリフト" value={phys.oceanEcPolewardDrift} min={0} max={5.0} step={0.1} unit="vy" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanEcPolewardDrift', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcPolewardDrift} />
+                        </div>
+                    </div>
+                    
+                    <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.3 Advanced Flow</div>
+                        <div className="space-y-1">
+                             <Slider label="スポーン速度" value={phys.oceanSpawnSpeedMultiplier} min={0.1} max={2.0} step={0.1} unit="x" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanSpawnSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanSpawnSpeedMultiplier} />
+                             <Slider label="這行速度" value={phys.oceanCrawlSpeedMultiplier} min={0.1} max={3.0} step={0.1} unit="x" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanCrawlSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanCrawlSpeedMultiplier} />
+                             <Slider label="最大速度Cap" value={phys.oceanMaxSpeedMultiplier} min={1.0} max={10.0} step={0.5} unit="x" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanMaxSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanMaxSpeedMultiplier} />
+                             <Slider label="慣性 (X)" value={phys.oceanInertiaX} min={0.01} max={0.5} step={0.01} unit="ratio" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanInertiaX', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanInertiaX} />
+                             <Slider label="沿岸反発力" value={phys.oceanRepulseStrength} min={0.0} max={2.0} step={0.1} unit="str" color="cyan"
+                                onChange={(v:number) => updatePhys('oceanRepulseStrength', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanRepulseStrength} />
                         </div>
                     </div>
                  </div>

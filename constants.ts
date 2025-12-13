@@ -62,6 +62,14 @@ export const DEFAULT_PHYSICS_PARAMS: PhysicsParams = {
   // 2.0 Collision Tuning
   oceanCollisionBuffer: 200.0, // km
   oceanSmoothing: 2.0, // iterations
+
+  // 2.3 Advanced Flow Tuning
+  oceanSpawnSpeedMultiplier: 0.8,
+  oceanCrawlSpeedMultiplier: 1.2,
+  oceanMaxSpeedMultiplier: 3.0,
+  oceanInertiaX: 0.05,
+  oceanRepulseStrength: 0.5,
+  oceanImpactThreshold: 0.05,
 };
 
 // Removed standalone ITCZ_PARAMS to ensure usage of mutable PhysicsParams

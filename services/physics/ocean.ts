@@ -1,4 +1,5 @@
 
+
 import { GridCell, SimulationConfig, PhysicsParams, OceanStreamline, StreamlinePoint, OceanImpact, OceanDiagnosticLog, DebugSimulationData, DebugFrame, DebugAgentSnapshot, PlanetParams } from '../../types';
 
 // Extended Agent Interface for Physics & Debugging
@@ -170,19 +171,22 @@ export const computeOceanCurrents = (
     const impactPointsTemp: ImpactPointTemp[] = [];
     
     // ** Spatial Pruning Grid **
+    // Stores the average velocity direction of streams passing through this cell
     const flowGridU = new Float32Array(rows * cols).fill(0);
     const flowGridV = new Float32Array(rows * cols).fill(0);
+    // Stores how many streams have merged/passed through this cell
     const flowGridCount = new Uint8Array(rows * cols).fill(0);
 
     const updateAndCheckPruning = (x: number, y: number, vx: number, vy: number): boolean => {
         const idx = getIdx(Math.round(x), Math.round(y));
         const count = flowGridCount[idx];
         
+        // 1. If empty, occupy it
         if (count === 0) {
             flowGridU[idx] = vx;
             flowGridV[idx] = vy;
             flowGridCount[idx] = 1;
-            return false; 
+            return false; // Do not prune
         }
 
         const ex = flowGridU[idx];
@@ -192,7 +196,24 @@ export const computeOceanCurrents = (
         const len2 = Math.sqrt(ex*ex + ey*ey);
         const sim = dot / (len1 * len2 + 0.0001);
 
-        if (sim > 0.95) return true; 
+        // 2. Check similarity
+        // Stricter threshold (0.98 -> ~11 degrees) to avoid merging distinct streams too early
+        if (sim > 0.98) {
+             // Allow overlap up to a limit (density control)
+             // This allows streams to bundle up before one is pruned
+             const MAX_OVERLAP = 4;
+             if (count < MAX_OVERLAP) {
+                 flowGridCount[idx] = count + 1;
+                 // Blend velocity to average out
+                 flowGridU[idx] = ex * 0.8 + vx * 0.2;
+                 flowGridV[idx] = ey * 0.8 + vy * 0.2;
+                 return false; 
+             }
+             return true; // Prune (Too dense and similar direction)
+        }
+        
+        // If directions are different (e.g., crossing streams), do not prune.
+        // We do not update the grid to prevent "thrashing" of direction data.
         return false;
     };
 
@@ -205,6 +226,9 @@ export const computeOceanCurrents = (
     // Stagnation Config
     const HISTORY_SIZE = 12; // Check position from ~12 frames ago
     const STAGNATION_THRESHOLD = 0.3; // Distance in grid cells
+    
+    // Pruning Protection
+    const PRUNE_PROTECTION_AGE = 50; // Agents younger than this won't be pruned
 
     // --- PASS 1: Equatorial Counter Current (ECC) ---
     
@@ -246,7 +270,7 @@ export const computeOceanCurrents = (
         const activeAgents = eccAgents.filter(a => a.active);
         const frameSnapshot: DebugAgentSnapshot[] = [];
 
-        // Early exit: Break immediately if everyone is dead, even in debug mode
+        // Early exit
         if (activeAgents.length === 0) break;
 
         for (const agent of eccAgents) {
@@ -260,21 +284,17 @@ export const computeOceanCurrents = (
             }
 
             // --- Robust Stagnation Check ---
-            // Update History
             agent.history.push({ x: agent.x, y: agent.y });
             if (agent.history.length > HISTORY_SIZE) {
                 agent.history.shift();
             }
 
-            // Check against historical position
             let isStuck = false;
             if (agent.history.length === HISTORY_SIZE) {
                 const oldPos = agent.history[0];
                 const dx = Math.abs(agent.x - oldPos.x);
                 const dy = Math.abs(agent.y - oldPos.y);
-                // Handle wrap-around for X distance
                 const dxWrap = Math.min(dx, cols - dx);
-                
                 const totalDist = dxWrap + dy;
                 
                 if (totalDist < STAGNATION_THRESHOLD) {
@@ -285,100 +305,154 @@ export const computeOceanCurrents = (
             if (isStuck) {
                  const { dist } = getEnvironment(agent.x, agent.y);
                  
-                 // Treat stagnation as impact to ensure continuity of flow
                  agent.active = false; 
                  agent.state = 'impact'; 
                  agent.cause = `Stagnation (Hist: ${HISTORY_SIZE}, Dist: ${dist.toFixed(0)})`;
 
-                 // Register as Impact
                  impactResults.push({ x: agent.x, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(agent.x), type: 'ECC' });
                  
-                 // Spawn EC from here
                  const safeSpawnX = findSafeSpawnX(agent.x, agent.y);
                  impactPointsTemp.push({ x: safeSpawnX, y: agent.y, lat: getLatFromRow(agent.y), lon: getLonFromCol(safeSpawnX) });
                  
-                 if (agent.type === 'ECC') {
-                     diagnostics.push({ 
-                         type: 'ECC_STUCK', 
-                         x: agent.x, y: agent.y, 
-                         lat: getLatFromRow(agent.y), 
-                         lon: getLonFromCol(agent.x), 
-                         age: agent.age, 
-                         message: `ECC Stagnated at Dist ${dist.toFixed(1)} -> Triggered Impact Logic` 
-                     });
-                 }
+                 diagnostics.push({ 
+                     type: 'ECC_STUCK', 
+                     x: agent.x, y: agent.y, 
+                     lat: getLatFromRow(agent.y), 
+                     lon: getLonFromCol(agent.x), 
+                     age: agent.age, 
+                     message: `ECC Stagnated at Dist ${dist.toFixed(1)} -> Triggered Impact Logic` 
+                 });
                  continue;
             }
 
             if (agent.active && agentPoints[agent.id].length > 5) {
-                 if (updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy)) {
+                 // ** Pruning Protection **
+                 // Only prune if agent is old enough. 
+                 // Always call updateAndCheckPruning to populate grid, but ignore result if young.
+                 const shouldPrune = updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy);
+                 
+                 if (shouldPrune && agent.age > PRUNE_PROTECTION_AGE) {
                      agent.active = false; agent.state = 'dead'; agent.cause = "Merged/Pruned";
                  }
             }
 
             if (agent.active) {
                 for(let ss=0; ss<SUB_STEPS; ss++) {
-                    const baseAx = phys.oceanBaseSpeed * 0.05; 
                     const lonIdx = Math.floor(((agent.x % cols) + cols) % cols);
                     const targetLat = itcz[lonIdx];
                     const targetY = getRowFromLat(targetLat);
-                    const distY = targetY - agent.y;
-                    const ayItcz = distY * phys.oceanPatternForce;
 
-                    let nvx = agent.vx + baseAx;
-                    let nvy = agent.vy + ayItcz;
+                    // --- MODERN NAVIGATION LOGIC ---
+                    const { dist: currentDist, gx: currentGx, gy: currentGy } = getEnvironment(agent.x, agent.y);
+                    const isNearCoast = currentDist > -60;
+
+                    // ECC flows East (+vx). If Gradient X > 0.2 (Land is East), we are blocked.
+                    const isBlockedByLand = isNearCoast && currentGx > 0.2;
+                    const isFarFromTarget = Math.abs(agent.y - targetY) > 2.0;
+
+                    let ax = 0;
+                    let ay = 0;
+
+                    if (isBlockedByLand && isFarFromTarget) {
+                        // Crawl Logic (Follow coast towards target)
+                        agent.state = 'crawling';
+                        const gradLen = Math.sqrt(currentGx*currentGx + currentGy*currentGy);
+                        
+                        if (gradLen > 0.0001) {
+                            const nx = currentGx / gradLen;
+                            const ny = currentGy / gradLen;
+                            // Tangents
+                            const tx1 = -ny; const ty1 = nx;
+                            const tx2 = ny;  const ty2 = -nx;
+                            
+                            // Pick tangent that moves towards targetY
+                            const dy1 = targetY - agent.y;
+                            const dot1 = ty1 * (dy1 > 0 ? 1 : -1); 
+                            const dot2 = ty2 * (dy1 > 0 ? 1 : -1);
+                            
+                            const bestTx = dot1 > dot2 ? tx1 : tx2;
+                            const bestTy = dot1 > dot2 ? ty1 : ty2;
+                            
+                            const crawlSpeed = phys.oceanBaseSpeed * phys.oceanCrawlSpeedMultiplier;
+                            ax = (bestTx * crawlSpeed - agent.vx) * 0.2; 
+                            ay = (bestTy * crawlSpeed - agent.vy) * 0.2;
+                            
+                            // Slight push out to avoid sticking
+                            ax -= nx * 0.1; 
+                            ay -= ny * 0.1;
+                        } else {
+                             ay = (targetY - agent.y) * 0.05;
+                        }
+
+                    } else {
+                        // Standard Flow (Eastward + ITCZ Attraction)
+                        agent.state = 'active';
+                        const baseSpeed = phys.oceanBaseSpeed; // Eastward
+                        
+                        ax = (baseSpeed - agent.vx) * phys.oceanInertiaX;
+                        // Use oceanPatternForce for ECC (not EcPatternForce)
+                        ay = (targetY - agent.y) * phys.oceanPatternForce - agent.vy * phys.oceanEcDamping;
+
+                        // Coastal Repulsion
+                        if (isNearCoast) {
+                            const gradLen = Math.sqrt(currentGx*currentGx + currentGy*currentGy);
+                            if (gradLen > 0.0001) {
+                                const nx = currentGx / gradLen;
+                                const ny = currentGy / gradLen;
+                                const repulseStrength = phys.oceanRepulseStrength * (1.0 - (currentDist / -60));
+                                ax -= nx * repulseStrength;
+                                ay -= ny * repulseStrength;
+                            }
+                        }
+                    }
+
+                    // --- UPDATE ---
+                    let nvx = agent.vx + ax;
+                    let nvy = agent.vy + ay;
                     const nextX = agent.x + nvx * DT;
                     const nextY = agent.y + nvy * DT;
 
-                    const { dist: distOld } = getEnvironment(agent.x, agent.y);
-                    const { dist: distNew, gx, gy } = getEnvironment(nextX, nextY);
+                    const { dist: distNew, gx: newGx, gy: newGy } = getEnvironment(nextX, nextY);
 
-                    // --- ECC IMPACT CHECK ---
-                    if (distNew > 0 && distOld <= 0) {
-                        // Impact detected. 
-                        let tLow = 0, tHigh = 1; let hitX = agent.x, hitY = agent.y;
-                        for(let k=0; k<4; k++) {
-                            const tMid = (tLow + tHigh) * 0.5;
-                            const mx = agent.x + (nextX - agent.x) * tMid;
-                            const my = agent.y + (nextY - agent.y) * tMid;
-                            const mEnv = getEnvironment(mx, my);
-                            if (mEnv.dist > 0) tHigh = tMid; else tLow = tMid;
-                            hitX = mx; hitY = my;
-                        }
-                        const { gx: hgx, gy: hgy } = getEnvironment(hitX, hitY);
-                        const gradLen = Math.sqrt(hgx*hgx + hgy*hgy);
-                        const nx = gradLen > 0 ? hgx / gradLen : 0;
-                        const ny = gradLen > 0 ? hgy / gradLen : 0;
-                        const vDotN = nvx * nx + nvy * ny;
+                    if (distNew > 0) {
+                        const gradLen = Math.sqrt(newGx*newGx + newGy*newGy);
+                        const nx = gradLen > 0 ? newGx / gradLen : 0;
+                        const ny = gradLen > 0 ? newGy / gradLen : 0;
+                        
+                        // Impact Detection: Moving East (+vx) into East-facing wall (+nx)
+                        // Use same strictness as EC but mirrored
+                        const isImpact = (nvx > 0.1 && nx > 0.2); 
 
-                        const isHeadOn = (nvx > 0 && hgx > -0.2); 
+                        if (isImpact) {
+                            // Register Impact
+                            impactResults.push({ x: nextX, y: nextY, lat: getLatFromRow(nextY), lon: getLonFromCol(nextX), type: 'ECC' });
+                            const safeSpawnX = findSafeSpawnX(nextX, nextY);
+                            impactPointsTemp.push({ x: safeSpawnX, y: nextY, lat: getLatFromRow(nextY), lon: getLonFromCol(safeSpawnX) });
 
-                        if (isHeadOn && vDotN > 0.05) {
-                            // Valid Impact
-                            impactResults.push({ x: hitX, y: hitY, lat: getLatFromRow(hitY), lon: getLonFromCol(hitX), type: 'ECC' });
-                            const safeSpawnX = findSafeSpawnX(hitX, hitY);
-                            impactPointsTemp.push({ x: safeSpawnX, y: hitY, lat: getLatFromRow(hitY), lon: getLonFromCol(safeSpawnX) });
-
-                            agent.active = false; agent.state = 'impact'; agent.cause = "Coastal Impact";
+                            agent.active = false; agent.state = 'impact'; agent.cause = "Coastal Impact (Head-on)";
                             break; 
                         } else {
-                            // Slide
-                            nvx = nvx - vDotN * nx; nvy = nvy - vDotN * ny;
-                            const epsilon = 0.1;
-                            agent.x = hitX - nx * epsilon; agent.y = hitY - ny * epsilon;
-                        }
-                    } else if (distNew > 0) {
-                        // Recovery
-                        const gradLen = Math.sqrt(gx*gx + gy*gy);
-                        if (gradLen > 0.0001) {
-                            const nx = gx / gradLen; const ny = gy / gradLen;
-                            const pushFactor = distNew + 0.1; 
-                            agent.x -= nx * pushFactor; agent.y -= ny * pushFactor;
+                            // Slide / Deflect
+                            const vDotN = nvx * nx + nvy * ny;
+                            nvx = nvx - vDotN * nx; 
+                            nvy = nvy - vDotN * ny;
+                            
+                            // Damping on collision
+                            nvx *= 0.9; nvy *= 0.9;
+                            
+                            // Push out
+                            const pushOut = 0.1;
+                            agent.x = nextX - nx * pushOut;
+                            agent.y = nextY - ny * pushOut;
+                            
+                            agent.vx = nvx; agent.vy = nvy;
+                            continue;
                         }
                     } else {
+                        // Move freely
                         agent.x = nextX; agent.y = nextY;
+                        agent.vx = nvx; agent.vy = nvy;
                     }
-                    agent.vx = nvx; agent.vy = nvy;
                 }
             }
             
@@ -412,7 +486,8 @@ export const computeOceanCurrents = (
     let ecAgents: Agent[] = [];
     
     for (const ip of impactPointsTemp) {
-        const spawnSpeed = phys.oceanBaseSpeed * 0.8;
+        // Use Param
+        const spawnSpeed = phys.oceanBaseSpeed * phys.oceanSpawnSpeedMultiplier;
         ecAgents.push({
             id: nextAgentId++, active: true, x: ip.x, y: ip.y,
             vx: 0, vy: -spawnSpeed, strength: 2.0, type: 'EC_N',
@@ -454,7 +529,10 @@ export const computeOceanCurrents = (
             }
 
             if (agentPoints[agent.id] && agentPoints[agent.id].length > 5 && !isDebugRun) {
-                 if (updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy)) {
+                 // ** Pruning Protection **
+                 const shouldPrune = updateAndCheckPruning(agent.x, agent.y, agent.vx, agent.vy);
+                 
+                 if (shouldPrune && agent.age > PRUNE_PROTECTION_AGE) {
                      agent.active = false; agent.state = 'dead'; agent.cause = "Merged/Pruned";
                  }
             }
@@ -528,7 +606,8 @@ export const computeOceanCurrents = (
                             const bestTx = dot1 > dot2 ? tx1 : tx2;
                             const bestTy = dot1 > dot2 ? ty1 : ty2;
                             
-                            const crawlSpeed = phys.oceanBaseSpeed * 1.2;
+                            // Use Param
+                            const crawlSpeed = phys.oceanBaseSpeed * phys.oceanCrawlSpeedMultiplier;
                             ax = (bestTx * crawlSpeed - agent.vx) * 0.2; 
                             ay = (bestTy * crawlSpeed - agent.vy) * 0.2;
                             
@@ -541,7 +620,8 @@ export const computeOceanCurrents = (
                     } else {
                         agent.state = 'active'; // Flowing
                         const baseWestwardSpeed = -phys.oceanBaseSpeed * 1.0;
-                        ax = (baseWestwardSpeed - agent.vx) * 0.05;
+                        // Use Param
+                        ax = (baseWestwardSpeed - agent.vx) * phys.oceanInertiaX;
 
                         const k = phys.oceanEcPatternForce;
                         const errorY = targetY - agent.y;
@@ -554,7 +634,8 @@ export const computeOceanCurrents = (
                             if (gradLen > 0.0001) {
                                 const nx = currentGx / gradLen;
                                 const ny = currentGy / gradLen;
-                                const repulseStrength = 0.5 * (1.0 - (currentDist / -60));
+                                // Use Param
+                                const repulseStrength = phys.oceanRepulseStrength * (1.0 - (currentDist / -60));
                                 ax -= nx * repulseStrength;
                                 ay -= ny * repulseStrength;
                             }
@@ -605,7 +686,8 @@ export const computeOceanCurrents = (
                     }
 
                     const speed = Math.sqrt(agent.vx*agent.vx + agent.vy*agent.vy);
-                    const maxSpeed = phys.oceanBaseSpeed * 3.0;
+                    // Use Param
+                    const maxSpeed = phys.oceanBaseSpeed * phys.oceanMaxSpeedMultiplier;
                     if (speed > maxSpeed) {
                         agent.vx = (agent.vx / speed) * maxSpeed;
                         agent.vy = (agent.vy / speed) * maxSpeed;
