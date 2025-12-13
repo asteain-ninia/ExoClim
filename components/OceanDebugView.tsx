@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useRef, useState } from 'react';
 import { DebugSimulationData, DebugAgentSnapshot, PlanetParams } from '../types';
 import { computeOceanCurrents } from '../services/physics/ocean'; // Unified Engine
@@ -9,11 +10,13 @@ interface Props {
     itczLines: number[][];
     config: SimulationConfig;
     phys: PhysicsParams;
-    planet: PlanetParams; // Added prop
+    planet: PlanetParams;
+    cellCount: number;
+    hadleyWidth?: number;
     onClose: () => void;
 }
 
-const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet, onClose }) => {
+const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet, cellCount, hadleyWidth, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [debugData, setDebugData] = useState<DebugSimulationData | null>(null);
     const [currentStep, setCurrentStep] = useState(0);
@@ -21,6 +24,11 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [hoverInfo, setHoverInfo] = useState<DebugAgentSnapshot | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // Overlay Controls
+    const [showOverlayITCZ, setShowOverlayITCZ] = useState(true);
+    const [showOverlayECTargets, setShowOverlayECTargets] = useState(true);
+    const [showOverlayCells, setShowOverlayCells] = useState(false);
 
     // Debug Controls
     const [targetMonth, setTargetMonth] = useState<0 | 6>(6); // Default July
@@ -99,27 +107,79 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
         renderMap(-mapSize.width);
         renderMap(mapSize.width);
         
-        // 2. Draw ITCZ Line
-        ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
-        ctx.setLineDash([4, 2]);
-        ctx.lineWidth = 1;
-        
-        const renderITCZ = (offsetX: number) => {
-            ctx.beginPath();
-            for(let c=0; c<cols; c++) {
-                const lat = debugData.itczLine[c];
-                const r = (90 - lat) / 180 * (rows - 1);
-                const x = c * cellW + offsetX;
-                const y = r * cellH;
-                if(c===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-            }
-            ctx.stroke();
+        // 2. Draw Overlays
+        const renderLatPolyline = (lats: number[], color: string, dash: number[] = [], lineWidth: number = 1) => {
+            ctx.strokeStyle = color;
+            ctx.setLineDash(dash);
+            ctx.lineWidth = lineWidth;
+
+            const render = (offsetX: number) => {
+                ctx.beginPath();
+                for(let c=0; c<cols; c++) {
+                    const lat = lats[c];
+                    // Clamp
+                    const clampedLat = Math.max(-90, Math.min(90, lat));
+                    const r = (90 - clampedLat) / 180 * (rows - 1);
+                    const x = c * cellW + offsetX;
+                    const y = r * cellH;
+
+                    if (c === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            };
+
+            render(0);
+            render(-mapSize.width);
+            render(mapSize.width);
+            ctx.setLineDash([]);
         };
-        renderITCZ(0);
-        renderITCZ(-mapSize.width);
-        renderITCZ(mapSize.width);
-        
-        ctx.setLineDash([]);
+
+        const renderLatHLine = (lat: number, color: string, dash: number[] = [], lineWidth: number = 1) => {
+            ctx.strokeStyle = color;
+            ctx.setLineDash(dash);
+            ctx.lineWidth = lineWidth;
+            
+            const clampedLat = Math.max(-90, Math.min(90, lat));
+            const r = (90 - clampedLat) / 180 * (rows - 1);
+            const y = r * cellH;
+
+            const render = (offsetX: number) => {
+                ctx.beginPath();
+                ctx.moveTo(offsetX, y);
+                ctx.lineTo(offsetX + mapSize.width, y);
+                ctx.stroke();
+            };
+            
+            render(0);
+            render(-mapSize.width);
+            render(mapSize.width);
+            ctx.setLineDash([]);
+        };
+
+        // 2a. ITCZ
+        if (showOverlayITCZ && debugData.itczLine) {
+            renderLatPolyline(debugData.itczLine, 'rgba(255, 255, 0, 0.6)', [4, 2], 1.5);
+        }
+
+        // 2b. EC Targets
+        if (showOverlayECTargets && debugData.itczLine) {
+            const gap = phys.oceanEcLatGap;
+            const ecN = debugData.itczLine.map(l => l + gap);
+            const ecS = debugData.itczLine.map(l => l - gap);
+            renderLatPolyline(ecN, 'rgba(0, 255, 255, 0.6)', [2, 4], 1);
+            renderLatPolyline(ecS, 'rgba(0, 255, 255, 0.6)', [2, 4], 1);
+        }
+
+        // 2c. Cell Boundaries (Estimated)
+        if (showOverlayCells && cellCount > 0) {
+            const cellDeg = 90 / cellCount;
+            for(let i=1; i<cellCount; i++) {
+                const lat = i * cellDeg;
+                renderLatHLine(lat, 'rgba(255, 255, 255, 0.3)', [2, 2], 1);
+                renderLatHLine(-lat, 'rgba(255, 255, 255, 0.3)', [2, 2], 1);
+            }
+        }
 
         // 3. Draw Agents
         const frame = debugData.frames[currentStep];
@@ -180,7 +240,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
             renderAgent(agent, mapSize.width);
         });
 
-    }, [debugData, currentStep, mapSize]);
+    }, [debugData, currentStep, mapSize, showOverlayITCZ, showOverlayECTargets, showOverlayCells, cellCount, phys]);
 
     // Interaction for Hover
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -223,7 +283,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
 
     return (
         <div className="fixed inset-0 z-[100] bg-black/80 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
-            <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col max-h-full">
+            <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden max-w-6xl w-full flex flex-col max-h-full">
                 
                 {/* Header */}
                 <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950">
@@ -288,7 +348,31 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                     </div>
 
                     {/* Sidebar Stats */}
-                    <div className="w-64 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto">
+                    <div className="w-64 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto custom-scrollbar shrink-0">
+                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Overlay Controls</h3>
+                        <div className="space-y-2 text-xs text-gray-300 mb-6 bg-gray-800/50 p-2 rounded border border-gray-800">
+                             <label className="flex items-center gap-2 cursor-pointer hover:text-white">
+                                 <input type="checkbox" checked={showOverlayITCZ} onChange={e => setShowOverlayITCZ(e.target.checked)} className="accent-yellow-500" />
+                                 <span className={showOverlayITCZ ? "text-yellow-200" : ""}>ITCZ (Yellow)</span>
+                             </label>
+                             <label className="flex items-center gap-2 cursor-pointer hover:text-white">
+                                 <input type="checkbox" checked={showOverlayECTargets} onChange={e => setShowOverlayECTargets(e.target.checked)} className="accent-cyan-500" />
+                                 <span className={showOverlayECTargets ? "text-cyan-200" : ""}>EC Targets (Cyan)</span>
+                             </label>
+                             <label className="flex items-center gap-2 cursor-pointer hover:text-white">
+                                 <input type="checkbox" checked={showOverlayCells} onChange={e => setShowOverlayCells(e.target.checked)} className="accent-gray-500" />
+                                 <span>Cell Bounds (Gray)</span>
+                             </label>
+                        </div>
+                        
+                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Overlay Params</h3>
+                        <div className="space-y-1 text-[10px] font-mono text-gray-400 mb-6 pl-2 border-l-2 border-gray-700">
+                            <div className="flex justify-between"><span>Gap (oceanEcLatGap):</span> <span className="text-cyan-300">{phys.oceanEcLatGap.toFixed(1)}°</span></div>
+                            <div className="flex justify-between"><span>Cell Count:</span> <span className="text-white">{cellCount}</span></div>
+                            <div className="flex justify-between"><span>Cell Width:</span> <span>{(90/cellCount).toFixed(1)}°</span></div>
+                            <div className="flex justify-between"><span>Retrograde:</span> <span className={planet.isRetrograde ? "text-orange-400" : "text-gray-500"}>{planet.isRetrograde ? "YES" : "NO"}</span></div>
+                        </div>
+
                         <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">フレーム情報</h3>
                         <div className="space-y-2 text-xs font-mono text-gray-300">
                              <div className="flex justify-between"><span>対象月:</span> <span className={targetMonth === 6 ? "text-red-400" : "text-blue-400"}>{targetMonth === 6 ? '7月 (夏)' : '1月 (冬)'}</span></div>

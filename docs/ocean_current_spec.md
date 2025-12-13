@@ -83,3 +83,40 @@
 *   **鮮やかな色 (Vivid)**: **角度が急（南北流）**。ITCZに対して垂直に近い、急激なアプローチまたは離脱。
 
 `intensity = (abs(vy) / max_drift)^2` の非線形カーブを用いることで、わずかな南北移動は黒く、強い南北移動のみを鮮やかに表示し、主要な熱輸送パスを強調します。
+
+---
+
+## 6. デバッグ可視化: Lon–Lat Overlay（風帯 / アトラクタ表示）
+
+本節は、海流エージェントが参照している **目標緯度（アトラクタ）** と、将来一般化する予定の **循環セル境界（風帯ガイド）** を、緯度×経度（Lon–Lat）座標上で確認できるようにするための実装指示である。
+
+狙いは、流体の厳密解ではなく **「人間が線を引くときに確認している補助線」** を UI 上に再現し、チューニングとバグ切り分けを高速化すること。
+
+> 重要: この可視化は物理を変えない（デバッグ表示のみ）。
+
+### 6.1 表示対象
+
+- ITCZ（ECCアトラクタ）: `debugData.itczLine`
+- EC Targets（EC_N / EC_S アトラクタ）: `ITCZ ± oceanEcLatGap`
+- Cell Boundaries（estimated）: `cellCount` から `cellWidth=90/cellCount` を計算し、`lat=±(i*cellWidth)`（i=1..cellCount-1）を水平線として描画
+
+### 6.2 UI
+
+OceanDebugView 右サイドバーにトグルを追加:
+
+- [x] ITCZ
+- [x] EC Targets
+- [ ] Cell Boundaries
+
+併せて読み取り専用のパラメータ表示:
+
+- `oceanEcLatGap`（deg）
+- `cellCount`（cells/hemisphere）
+- `cellWidth`（deg）
+
+### 6.3 バグ注意
+
+- ITCZ 配列長と cols の不一致に注意（参照外アクセス）
+- `ITCZ ± gap` のクランプ漏れに注意（±90超え）
+- 破線状態のリークに注意（`ctx.setLineDash([])`）
+- ループ表示（0/±width）で overlay も 3 回描画する

@@ -7,7 +7,7 @@ import Charts from './components/Charts';
 import TestOverlay from './components/TestOverlay';
 import OceanDebugView from './components/OceanDebugView'; // New Import
 import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_CONFIG, DEFAULT_PHYSICS_PARAMS } from './constants';
-import { runSimulation } from './services/climateEngine';
+import { runSimulation } from './services/climateEngine.ts';
 import { initializeGrid } from './services/geography';
 import { exportAllData } from './services/exporter';
 import { PlanetParams, AtmosphereParams, SimulationResult, SimulationConfig, PhysicsParams } from './types';
@@ -118,6 +118,8 @@ const App: React.FC = () => {
              config={config}
              phys={phys}
              planet={planet}
+             cellCount={result.cellCount}
+             hadleyWidth={result.hadleyWidth}
              onClose={() => setShowOceanDebug(false)}
           />
       )}
