@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import Controls from './components/Controls';
-import MapVisualizer from './components/MapVisualizer';
-import Charts from './components/Charts';
-import TestOverlay from './components/TestOverlay';
-import OceanDebugView from './components/OceanDebugView'; // New Import
-import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_CONFIG, DEFAULT_PHYSICS_PARAMS } from './constants';
-import { runSimulation } from './services/climateEngine.ts';
-import { initializeGrid } from './services/geography';
-import { exportAllData } from './services/exporter';
-import { PlanetParams, AtmosphereParams, SimulationResult, SimulationConfig, PhysicsParams } from './types';
+import Controls from './Controls';
+import MapVisualizer from './MapVisualizer';
+import Charts from './Charts';
+import TestOverlay from './TestOverlay';
+import OceanDebugView from './OceanDebugView'; // New Import
+import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_CONFIG, DEFAULT_PHYSICS_PARAMS } from '../constants';
+import { runSimulation } from '../services/climateEngine.ts';
+import { initializeGrid } from '../services/geography';
+import { exportAllData } from '../services/exporter';
+import { PlanetParams, AtmosphereParams, SimulationResult, SimulationConfig, PhysicsParams } from '../types';
 
 const App: React.FC = () => {
   const [planet, setPlanet] = useState<PlanetParams>(EARTH_PARAMS);
