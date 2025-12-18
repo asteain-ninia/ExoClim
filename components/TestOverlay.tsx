@@ -13,7 +13,7 @@ const TestOverlay: React.FC<Props> = ({ onClose, currentResult }) => {
 
     const runDiagnostics = () => {
         if (!currentResult) {
-            setResults([{ name: "Data Error", passed: false, message: "No simulation data available." }]);
+            setResults([{ name: "データエラー", passed: false, message: "解析可能なシミュレーションデータが存在しません。" }]);
             return;
         }
         const res = analyzeSimulation(currentResult);
@@ -30,12 +30,12 @@ const TestOverlay: React.FC<Props> = ({ onClose, currentResult }) => {
                 
                 {!results && (
                     <div className="text-center py-8">
-                        <p className="text-gray-400 mb-6 text-sm">現在のシミュレーション結果を解析し、<br/>海流生成における異常（早期消滅など）を検出します。</p>
+                        <p className="text-gray-400 mb-6 text-sm">現在の解析結果をスキャンし、<br/>海流の生成過程における物理的な異常（停滞、早期消滅等）を検出します。</p>
                         <button 
                             onClick={runDiagnostics}
                             className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded font-bold transition-all shadow-lg hover:shadow-blue-500/30"
                         >
-                            現在のマップを診断
+                            解析エンジンを起動
                         </button>
                     </div>
                 )}
@@ -46,7 +46,7 @@ const TestOverlay: React.FC<Props> = ({ onClose, currentResult }) => {
                             <div key={i} className={`p-4 rounded border ${r.passed ? 'bg-green-900/20 border-green-800/50' : 'bg-red-900/20 border-red-800/50'}`}>
                                 <div className="flex justify-between items-center mb-1">
                                     <span className={`font-bold text-sm ${r.passed ? 'text-green-400' : 'text-red-400'}`}>{r.name}</span>
-                                    <span className={`text-xs uppercase font-bold px-2 py-0.5 rounded ${r.passed ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>{r.passed ? 'OK' : 'ISSUE'}</span>
+                                    <span className={`text-xs uppercase font-bold px-2 py-0.5 rounded ${r.passed ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>{r.passed ? '正常' : '異常あり'}</span>
                                 </div>
                                 <p className="text-xs text-gray-300 font-mono mt-1">{r.message}</p>
                                 {r.details && (
@@ -65,7 +65,7 @@ const TestOverlay: React.FC<Props> = ({ onClose, currentResult }) => {
                             onClick={runDiagnostics}
                             className="text-xs text-gray-400 hover:text-white underline mr-auto"
                         >
-                            再解析
+                            再実行
                         </button>
                      )}
                     <button 

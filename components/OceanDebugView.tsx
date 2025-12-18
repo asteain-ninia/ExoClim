@@ -1,5 +1,4 @@
 
-
 import React, { useEffect, useRef, useState } from 'react';
 import { DebugSimulationData, DebugAgentSnapshot, PlanetParams } from '../types';
 import { computeOceanCurrents } from '../services/physics/ocean'; // Unified Engine
@@ -227,14 +226,9 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
 
         frame.agents.forEach(originalAgent => {
             // Coordinate Normalization for Loop Rendering
-            // Use robust modulo to ensure result is always [0, cols) even for large negative numbers
             const normX = ((originalAgent.x % cols) + cols) % cols;
-
-            // Create a view-only agent with normalized coordinates
             const agent = { ...originalAgent, x: normX };
 
-            // Render Unconditionally in 3 Positions (Center, Left Loop, Right Loop)
-            // This ensures no agents disappear at boundaries regardless of coordinate logic
             renderAgent(agent, 0);
             renderAgent(agent, -mapSize.width);
             renderAgent(agent, mapSize.width);
@@ -261,13 +255,9 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
         let minD = 100; // px sq
 
         frame.agents.forEach(a => {
-            // Normalize for hit testing too
             const normX = ((a.x % cols) + cols) % cols;
-
             const ax = normX * cellW;
             const ay = a.y * cellH;
-            
-            // Check main, left, right instances
             const offsets = [0, mapSize.width, -mapSize.width];
             
             offsets.forEach(off => {
@@ -281,6 +271,14 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
         setHoverInfo(nearest);
     };
 
+    const stateLabels: Record<string, string> = {
+        'active': '進行中',
+        'crawling': '沿岸這行',
+        'impact': '衝突/到達',
+        'stuck': '停滞',
+        'dead': '消滅'
+    };
+
     return (
         <div className="fixed inset-0 z-[100] bg-black/80 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
             <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden max-w-6xl w-full flex flex-col max-h-full">
@@ -289,7 +287,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                 <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950">
                     <h2 className="text-lg font-bold text-white flex items-center gap-2">
                         <span className="text-red-500 font-mono text-xl">●</span>
-                        海流物理デバッガー (Unified Engine)
+                        海流物理デバッガー
                     </h2>
 
                     <div className="flex items-center gap-6">
@@ -299,13 +297,13 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                                 onClick={() => setTargetMonth(0)} 
                                 className={`px-3 py-1 text-xs rounded font-bold transition-colors ${targetMonth===0 ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
                              >
-                                 1月 (Summer S)
+                                 1月 (南半球の夏)
                              </button>
                              <button 
                                 onClick={() => setTargetMonth(6)} 
                                 className={`px-3 py-1 text-xs rounded font-bold transition-colors ${targetMonth===6 ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'}`}
                              >
-                                 7月 (Summer N)
+                                 7月 (北半球の夏)
                              </button>
                         </div>
                     </div>
@@ -319,7 +317,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                 <div className="flex-1 flex min-h-0 bg-gray-950 relative">
                     {/* Canvas Area */}
                     <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative bg-black">
-                         {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 text-blue-400 font-mono animate-pulse">物理シミュレーション計算中...</div>}
+                         {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 text-blue-400 font-mono animate-pulse">海流エージェント演算中...</div>}
                          <canvas 
                             ref={canvasRef} 
                             width={mapSize.width} 
@@ -332,64 +330,62 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                          {/* Hover Info Tooltip */}
                          {hoverInfo && (
                              <div className="absolute top-6 left-6 bg-black/90 border border-gray-500 text-xs text-white p-2 rounded pointer-events-none shadow-xl z-20">
-                                 <div className="font-bold text-yellow-400 mb-1">エージェント #{hoverInfo.id} ({hoverInfo.type})</div>
-                                 <div>位置: {hoverInfo.x.toFixed(1)}, {hoverInfo.y.toFixed(1)}</div>
-                                 <div>速度: {hoverInfo.vx.toFixed(2)}, {hoverInfo.vy.toFixed(2)}</div>
+                                 <div className="font-bold text-yellow-400 mb-1">エージェント ID: #{hoverInfo.id} ({hoverInfo.type})</div>
+                                 <div>位置座標: {hoverInfo.x.toFixed(1)}, {hoverInfo.y.toFixed(1)}</div>
+                                 <div>速度成分: {hoverInfo.vx.toFixed(2)}, {hoverInfo.vy.toFixed(2)}</div>
                                  <div className={`font-bold mt-1 ${
-                                     hoverInfo.state === 'active' ? 'text-green-400' : 
-                                     hoverInfo.state === 'crawling' ? 'text-fuchsia-400' :
-                                     hoverInfo.state === 'dead' ? 'text-gray-500' : 'text-red-400'
+                                     (hoverInfo.state === 'active' || hoverInfo.state === 'crawling') ? 'text-green-400' : 'text-red-400'
                                  }`}>
-                                     状態: {hoverInfo.state.toUpperCase()}
+                                     状態: {stateLabels[hoverInfo.state] || hoverInfo.state}
                                  </div>
-                                 {hoverInfo.cause && <div className="text-red-300">要因: {hoverInfo.cause}</div>}
+                                 {hoverInfo.cause && <div className="text-red-300 text-[10px] mt-1">詳細要因: {hoverInfo.cause}</div>}
                              </div>
                          )}
                     </div>
 
                     {/* Sidebar Stats */}
                     <div className="w-64 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto custom-scrollbar shrink-0">
-                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Overlay Controls</h3>
+                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">表示設定</h3>
                         <div className="space-y-2 text-xs text-gray-300 mb-6 bg-gray-800/50 p-2 rounded border border-gray-800">
                              <label className="flex items-center gap-2 cursor-pointer hover:text-white">
                                  <input type="checkbox" checked={showOverlayITCZ} onChange={e => setShowOverlayITCZ(e.target.checked)} className="accent-yellow-500" />
-                                 <span className={showOverlayITCZ ? "text-yellow-200" : ""}>ITCZ (Yellow)</span>
+                                 <span className={showOverlayITCZ ? "text-yellow-200" : ""}>ITCZ 算出線 (黄)</span>
                              </label>
                              <label className="flex items-center gap-2 cursor-pointer hover:text-white">
                                  <input type="checkbox" checked={showOverlayECTargets} onChange={e => setShowOverlayECTargets(e.target.checked)} className="accent-cyan-500" />
-                                 <span className={showOverlayECTargets ? "text-cyan-200" : ""}>EC Targets (Cyan)</span>
+                                 <span className={showOverlayECTargets ? "text-cyan-200" : ""}>EC 誘導ライン (水色)</span>
                              </label>
                              <label className="flex items-center gap-2 cursor-pointer hover:text-white">
                                  <input type="checkbox" checked={showOverlayCells} onChange={e => setShowOverlayCells(e.target.checked)} className="accent-gray-500" />
-                                 <span>Cell Bounds (Gray)</span>
+                                 <span>循環セル境界 (灰)</span>
                              </label>
                         </div>
                         
-                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Overlay Params</h3>
+                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">物理パラメータ</h3>
                         <div className="space-y-1 text-[10px] font-mono text-gray-400 mb-6 pl-2 border-l-2 border-gray-700">
-                            <div className="flex justify-between"><span>Gap (oceanEcLatGap):</span> <span className="text-cyan-300">{phys.oceanEcLatGap.toFixed(1)}°</span></div>
-                            <div className="flex justify-between"><span>Cell Count:</span> <span className="text-white">{cellCount}</span></div>
-                            <div className="flex justify-between"><span>Cell Width:</span> <span>{(90/cellCount).toFixed(1)}°</span></div>
-                            <div className="flex justify-between"><span>Retrograde:</span> <span className={planet.isRetrograde ? "text-orange-400" : "text-gray-500"}>{planet.isRetrograde ? "YES" : "NO"}</span></div>
+                            <div className="flex justify-between"><span>EC 分離幅:</span> <span className="text-cyan-300">{phys.oceanEcLatGap.toFixed(1)}°</span></div>
+                            <div className="flex justify-between"><span>セル数:</span> <span className="text-white">{cellCount}</span></div>
+                            <div className="flex justify-between"><span>セル幅:</span> <span>{(90/cellCount).toFixed(1)}°</span></div>
+                            <div className="flex justify-between"><span>自転逆転:</span> <span className={planet.isRetrograde ? "text-orange-400" : "text-gray-500"}>{planet.isRetrograde ? "あり" : "なし"}</span></div>
                         </div>
 
-                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">フレーム情報</h3>
+                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">フレーム詳細</h3>
                         <div className="space-y-2 text-xs font-mono text-gray-300">
-                             <div className="flex justify-between"><span>対象月:</span> <span className={targetMonth === 6 ? "text-red-400" : "text-blue-400"}>{targetMonth === 6 ? '7月 (夏)' : '1月 (冬)'}</span></div>
+                             <div className="flex justify-between"><span>対象季節:</span> <span className={targetMonth === 6 ? "text-red-400" : "text-blue-400"}>{targetMonth === 6 ? '7月 (夏)' : '1月 (冬)'}</span></div>
                              <div className="flex justify-between"><span>ステップ:</span> <span className="text-white">{currentStep}</span> / {debugData?.frames.length}</div>
-                             <div className="flex justify-between"><span>活動中:</span> <span className="text-blue-300">{debugData?.frames[currentStep]?.agents.filter(a=>a.state==='active' || a.state==='crawling').length}</span></div>
-                             <div className="flex justify-between"><span>死亡/停滞:</span> <span className="text-red-300">{debugData?.frames[currentStep]?.agents.filter(a=>a.state!=='active' && a.state!=='crawling').length}</span></div>
+                             <div className="flex justify-between"><span>アクティブ:</span> <span className="text-blue-300">{debugData?.frames[currentStep]?.agents.filter(a=>a.state==='active' || a.state==='crawling').length}</span></div>
+                             <div className="flex justify-between"><span>消滅/停滞:</span> <span className="text-red-300">{debugData?.frames[currentStep]?.agents.filter(a=>a.state!=='active' && a.state!=='crawling').length}</span></div>
                         </div>
 
                         <h3 className="text-xs font-bold text-gray-500 uppercase mt-6 mb-3">凡例</h3>
                         <div className="space-y-2 text-xs text-gray-400">
-                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#ff4400]"></span> ECC (暖流)</div>
-                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#00ccff]"></span> EC (寒流)</div>
-                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#d946ef]"></span> 這行 (Crawl)</div>
+                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#ff4400]"></span> 赤道反流 (ECC)</div>
+                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#00ccff]"></span> 赤道海流 (EC)</div>
+                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#d946ef]"></span> 沿岸這行 (Crawl)</div>
                              <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500 border border-orange-500"></span> 停滞 (Stuck)</div>
-                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-white border border-red-500"></span> 衝突 (Impact)</div>
-                             <div className="flex items-center gap-2"><span className="w-3 h-3 bg-red-900/50 border border-red-800"></span> 陸地 (Land)</div>
-                             <div className="flex items-center gap-2"><span className="w-3 h-3 bg-blue-900/30 border border-blue-800"></span> 海洋 (Ocean)</div>
+                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-white border border-red-500"></span> 衝突点 (Impact)</div>
+                             <div className="flex items-center gap-2"><span className="w-3 h-3 bg-red-900/50 border border-red-800"></span> 衝突判定壁 (Land)</div>
+                             <div className="flex items-center gap-2"><span className="w-3 h-3 bg-blue-900/30 border border-blue-800"></span> 海洋領域 (Ocean)</div>
                         </div>
                     </div>
                 </div>
@@ -400,7 +396,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                         onClick={() => setIsPlaying(!isPlaying)}
                         className={`px-4 py-2 rounded font-bold text-xs w-20 transition-colors ${isPlaying ? 'bg-yellow-600 text-white hover:bg-yellow-500' : 'bg-green-600 text-white hover:bg-green-500'}`}
                      >
-                         {isPlaying ? '一時停止' : '再生'}
+                         {isPlaying ? '停止' : '再生'}
                      </button>
                      
                      <div className="flex-1 flex flex-col justify-center">
@@ -416,13 +412,13 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                             className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                          />
                          <div className="flex justify-between text-[9px] text-gray-500 mt-1">
-                             <span>開始</span>
-                             <span>終了</span>
+                             <span>シミュレーション開始</span>
+                             <span>解析終了</span>
                          </div>
                      </div>
 
                      <div className="flex items-center gap-2 border-l border-gray-700 pl-4">
-                         <span className="text-[10px] font-bold text-gray-400 uppercase">再生速度</span>
+                         <span className="text-[10px] font-bold text-gray-400 uppercase">速度</span>
                          {[0.5, 1, 2, 5].map(s => (
                              <button 
                                 key={s}

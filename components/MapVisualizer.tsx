@@ -1,5 +1,4 @@
 
-
 import React, { useEffect, useRef, useState } from 'react';
 import { SimulationResult, PhysicsParams } from '../types';
 import { drawPixels } from './visualizer/PixelRenderer';
@@ -37,19 +36,19 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
   };
 
   const modeLabels: Record<string, string> = {
-      'temp': '気温 (Real Temp)',
-      'precip': '降水量 (Precipitation)',
-      'distCoast': '海岸距離 (Distance)',
-      'climate': '気候区分 (Köppen Climate)',
-      'insolation': '日射量 (Insolation)',
-      'wind': '気圧・風 (Pressure & Wind)',
-      'tempZonal': '基礎温度 (Zonal Temp)',
-      'oceanCurrent': '海流 (Ocean Current)',
-      'elevation': '地形・標高 (Elevation)',
-      'hadley': '大気循環・ITCZ (Circulation)',
-      'itcz_heatmap': 'Step 1.1: 影響マップ (HeatMap)',
-      'itcz_result': 'Step 1.6: ITCZ Result',
-      'ocean_collision': 'Step 2.0: 衝突リスク (Collision)'
+      'temp': '気温 (実測)',
+      'precip': '降水量',
+      'distCoast': '海岸距離',
+      'climate': 'ケッペン気候区分',
+      'insolation': '日射量',
+      'wind': '気圧・風配図',
+      'tempZonal': '帯状平均温度',
+      'oceanCurrent': '海流',
+      'elevation': '地形・標高',
+      'hadley': '大気循環・ITCZ',
+      'itcz_heatmap': 'ステップ 1.1: 熱影響マップ',
+      'itcz_result': 'ステップ 1.6: ITCZ 算出結果',
+      'ocean_collision': 'ステップ 2.0: 衝突判定'
   };
 
   // --- Rendering to Buffer ---
@@ -206,17 +205,17 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
       
       if (mode === 'oceanCurrent') {
            if (!cell.isLand) {
-             text += `\nState: Ocean`;
+             text += `\n属性: 海洋`;
            } else {
-             text += `\nState: Land`;
+             text += `\n属性: 陸地`;
            }
       } else if (mode === 'ocean_collision') {
-           text += `\nCollision Field: ${cell.collisionMask?.toFixed(1)}`;
-           text += `\nStatus: ${cell.collisionMask > 0 ? 'WALL' : 'SAFE'}`;
+           text += `\n衝突フィールド値: ${cell.collisionMask?.toFixed(1)}`;
+           text += `\nステータス: ${cell.collisionMask > 0 ? '壁面 (進入不可)' : '安全 (航行可)'}`;
       } else if (mode === 'itcz_heatmap') {
-          text += `\nHeatMap: ${cell.heatMapVal.toFixed(2)}`;
-          const type = cell.heatMapVal > 0.5 ? "Inland" : (cell.heatMapVal < -0.5 ? "Deep Ocean" : "Coastal");
-          text += `\nType: ${type}`;
+          text += `\n熱影響度: ${cell.heatMapVal.toFixed(2)}`;
+          const type = cell.heatMapVal > 0.5 ? "内陸深部" : (cell.heatMapVal < -0.5 ? "外洋中心" : "沿岸域");
+          text += `\n地域特性: ${type}`;
       } else if (mode === 'distCoast') {
            const dist = cell.distCoast;
            if (dist >= 0) {
@@ -303,7 +302,7 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
             onClick={() => setIsGradient(!isGradient)}
             onMouseDown={(e) => e.stopPropagation()}
         >
-            <span className="text-xs text-white font-bold uppercase tracking-wider">スムーズ表示</span>
+            <span className="text-xs text-white font-bold uppercase tracking-wider">グラデーション表示</span>
              <div 
                 className={`w-10 h-5 rounded-full p-0.5 transition-colors ${isGradient ? 'bg-blue-600' : 'bg-gray-600'}`}
              >

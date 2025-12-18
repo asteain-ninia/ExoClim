@@ -1,5 +1,4 @@
 
-
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { SimulationResult } from '../types';
@@ -76,23 +75,23 @@ const Charts: React.FC<Props> = ({ data, displayMonth }) => {
     return result.sort((a, b) => a.lat - b.lat); 
   }, [data, displayMonth]);
 
-  if (!data) return <div className="h-full flex items-center justify-center text-gray-500 text-xs text-center p-4">データ<br/>待機中</div>;
+  if (!data) return <div className="h-full flex items-center justify-center text-gray-500 text-xs text-center p-4">データの読込を<br/>待機しています</div>;
 
-  const displayLabel = displayMonth === 'annual' ? "年平均/総量" : (displayMonth === 0 ? "1月 (Jan)" : "7月 (Jul)");
+  const displayLabel = displayMonth === 'annual' ? "年平均/総量" : (displayMonth === 0 ? "1月" : "7月");
 
   return (
     <div className="h-full w-full flex flex-col bg-gray-900 border-l border-gray-800" id="charts-main-container">
       <div className="p-3 border-b border-gray-800 bg-gray-900/50">
-        <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 text-center">緯度別平均 ({displayLabel})</h3>
+        <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 text-center">緯度別平均値 ({displayLabel})</h3>
         <div className="grid grid-cols-2 gap-2 text-[10px]">
            <div className="bg-gray-800 p-1 rounded text-center border-l-2 border-red-400">
               <span className="block text-gray-500 text-[9px]">全球平均気温</span>
               <span className="text-white font-mono">{(data.globalTemp - 273.15).toFixed(1)}°C</span>
            </div>
            <div className="bg-gray-800 p-1 rounded text-center border-l-2 border-blue-400">
-              <span className="block text-gray-500 text-[9px]">循環セル数 (片側)</span>
+              <span className="block text-gray-500 text-[9px]">大気循環セル数</span>
               <span className="text-white font-mono text-xs">
-                {data.cellCount} Cells
+                {data.cellCount} 層
               </span>
            </div>
         </div>
@@ -160,7 +159,7 @@ const Charts: React.FC<Props> = ({ data, displayMonth }) => {
                 stroke="#F87171" 
                 dot={false} 
                 strokeWidth={2} 
-                name="気温" 
+                name="平均気温" 
                 isAnimationActive={false} 
               />
               <Line 
@@ -170,7 +169,7 @@ const Charts: React.FC<Props> = ({ data, displayMonth }) => {
                 stroke="#60A5FA" 
                 dot={false} 
                 strokeWidth={2} 
-                name="降水" 
+                name="平均降水" 
                 isAnimationActive={false} 
               />
             </LineChart>

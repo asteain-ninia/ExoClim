@@ -1,5 +1,4 @@
 
-
 import React, { useRef, useState, useEffect } from 'react';
 import { PlanetParams, AtmosphereParams, SimulationConfig, CustomMapData, PhysicsParams } from '../types';
 import { EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_PHYSICS_PARAMS, RESOLUTION_PRESETS } from '../constants';
@@ -96,12 +95,12 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
   return (
     <div className="flex w-full h-full bg-gray-900 border-t border-gray-700 select-none">
       <div className="w-32 flex flex-col border-r border-gray-700 bg-gray-950 shrink-0">
-          <div className="p-3 text-[10px] text-gray-500 font-bold uppercase tracking-widest border-b border-gray-800/50 text-center">設定パネル</div>
+          <div className="p-3 text-[10px] text-gray-500 font-bold uppercase tracking-widest border-b border-gray-800/50 text-center">設定メニュー</div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <TabButton id="system" label="システム" color="blue" />
-            <TabButton id="planet" label="惑星" color="green" />
-            <TabButton id="orbit" label="軌道" color="orange" />
-            <TabButton id="atmos" label="大気" color="purple" />
+            <TabButton id="system" label="基本設定" color="blue" />
+            <TabButton id="planet" label="惑星特性" color="green" />
+            <TabButton id="orbit" label="公転軌道" color="orange" />
+            <TabButton id="atmos" label="大気・海洋" color="purple" />
             <TabButton id="physics" label="物理演算" color="red" />
           </div>
           
@@ -118,9 +117,9 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
         {activeTab === 'system' && (
             <div className="grid grid-cols-3 gap-6 animate-[fadeIn_0.15s_ease-out]">
                 <div className="col-span-1 space-y-4">
-                    <h3 className="text-xs font-bold text-blue-400 uppercase border-b border-blue-900/50 pb-1 mb-3">生成設定</h3>
+                    <h3 className="text-xs font-bold text-blue-400 uppercase border-b border-blue-900/50 pb-1 mb-3">生成オプション</h3>
                     <div>
-                        <label className="text-[10px] text-gray-400 font-bold mb-1 block">マップタイプ</label>
+                        <label className="text-[10px] text-gray-400 font-bold mb-1 block">惑星地図のタイプ</label>
                         <select 
                             className="w-full bg-gray-800 text-gray-200 text-xs border border-gray-600 rounded p-2 outline-none focus:border-blue-500 transition-colors cursor-pointer"
                             value={config.startingMap === 'CUSTOM' ? 'PROCEDURAL' : config.startingMap}
@@ -128,11 +127,11 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                             disabled={isRunning}
                         >
                             <option value="PROCEDURAL">分散大陸 (地球型)</option>
-                            <option value="VIRTUAL_CONTINENT">仮想大陸</option>
+                            <option value="VIRTUAL_CONTINENT">単一大陸 (仮想)</option>
                         </select>
                     </div>
                     <div>
-                        <label className="text-[10px] text-gray-400 font-bold mb-1 block">解像度</label>
+                        <label className="text-[10px] text-gray-400 font-bold mb-1 block">計算解像度</label>
                         <div className="flex gap-1">
                              {RESOLUTION_PRESETS.map((p, i) => (
                                  <button
@@ -152,12 +151,12 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
                      <div>
                         <Slider 
-                            label="マップ拡大率" 
+                            label="地図の拡大率" 
                             value={config.zoom || 1.0} 
                             min={1.0} 
                             max={8.0} 
                             step={0.1} 
-                            unit="x" 
+                            unit="倍" 
                             color="blue"
                             onChange={(v: number) => updateConfig('zoom', v)} 
                             defaultValue={1.0} 
@@ -165,14 +164,14 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
                     <div className="flex gap-2 pt-2">
                         <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded text-[10px] text-gray-300 transition-colors">
-                             JSON読込
+                             外部マップ読込
                         </button>
                         <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                     </div>
                 </div>
 
                 <div className="col-span-1 space-y-4">
-                     <h3 className="text-xs font-bold text-green-400 uppercase border-b border-green-900/50 pb-1 mb-3">アクション</h3>
+                     <h3 className="text-xs font-bold text-green-400 uppercase border-b border-green-900/50 pb-1 mb-3">シミュレーション</h3>
                      <button
                         onClick={handleRun}
                         disabled={isRunning || errors.length > 0}
@@ -185,9 +184,9 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                          {isRunning ? (
                              <>
                                 <div className="w-3 h-3 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
-                                計算中...
+                                解析中...
                              </>
-                         ) : "シミュレーション実行"}
+                         ) : "シミュレーション開始"}
                     </button>
                     
                     <button
@@ -195,16 +194,16 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                         disabled={isRunning}
                         className="w-full py-2 bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-100 font-bold text-xs rounded border border-emerald-700/50 transition-colors flex items-center justify-center gap-2"
                     >
-                        データ・画像出力 (ZIP)
+                        解析結果の書き出し (ZIP)
                     </button>
                 </div>
 
                 <div className="col-span-1 bg-gray-900/50 rounded p-3 border border-gray-800">
                     <h3 className="text-[10px] font-bold text-gray-500 uppercase mb-2">ステータス</h3>
                     <div className="text-xs text-gray-300 font-mono space-y-1">
-                        <div className="flex justify-between"><span>状態:</span> <span className={isRunning ? 'text-blue-400' : 'text-green-400'}>{isRunning ? 'COMPUTING' : 'IDLE'}</span></div>
+                        <div className="flex justify-between"><span>実行状態:</span> <span className={isRunning ? 'text-blue-400' : 'text-green-400'}>{isRunning ? '計算中' : '待機中'}</span></div>
                         <div className="flex justify-between"><span>グリッド:</span> <span>{config.resolutionLat}x{config.resolutionLon}</span></div>
-                        <div className="flex justify-between"><span>エラー:</span> <span className={errors.length > 0 ? "text-red-400 font-bold" : "text-gray-500"}>{errors.length}</span></div>
+                        <div className="flex justify-between"><span>エラー数:</span> <span className={errors.length > 0 ? "text-red-400 font-bold" : "text-gray-500"}>{errors.length}</span></div>
                         <div className="flex justify-between"><span>ズーム:</span> <span>x{(config.zoom || 1.0).toFixed(1)}</span></div>
                     </div>
                     {isRunning && (
@@ -220,10 +219,10 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
              <div className="animate-[fadeIn_0.15s_ease-out]">
                  <h3 className="text-xs font-bold text-green-400 uppercase border-b border-green-900/50 pb-1 mb-3">惑星パラメータ</h3>
                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    <Slider label="半径" value={planet.radius} min={2000} max={15000} step={100} unit="km" color="green"
+                    <Slider label="惑星半径" value={planet.radius} min={2000} max={15000} step={100} unit="km" color="green"
                         onChange={(v:number) => updatePlanet('radius', v)} defaultValue={EARTH_PARAMS.radius} />
                     
-                    <Slider label="自転周期" value={planet.rotationPeriod} min={1} max={100} step={1} unit="h" color="green"
+                    <Slider label="自転周期" value={planet.rotationPeriod} min={1} max={100} step={1} unit="時間" color="green"
                         onChange={(v:number) => updatePlanet('rotationPeriod', v)} defaultValue={EARTH_PARAMS.rotationPeriod} />
                     
                     <Slider label="表面重力" value={planet.gravity} min={5} max={25} step={0.1} unit="m/s²" color="green"
@@ -239,7 +238,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     >
                         <span className="text-[10px] font-bold uppercase mb-1">自転方向</span>
                         <div className="flex items-center gap-2 text-sm font-bold">
-                            {planet.isRetrograde ? '逆行 (Retrograde)' : '順行 (Prograde)'}
+                            {planet.isRetrograde ? '逆行 (時計回り)' : '順行 (反時計回り)'}
                             <span className="text-lg">{planet.isRetrograde ? '⟲' : '⟳'}</span>
                         </div>
                     </button>
@@ -252,13 +251,13 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                 <h3 className="text-xs font-bold text-orange-400 uppercase border-b border-orange-900/50 pb-1 mb-3">軌道設定</h3>
                 
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                    <Slider label="太陽光度" value={planet.solarLuminosity} min={0.5} max={2.0} step={0.01} unit="x Sun" color="orange"
+                    <Slider label="主星の光度" value={planet.solarLuminosity} min={0.5} max={2.0} step={0.01} unit="x 太陽" color="orange"
                         onChange={(v:number) => updatePlanet('solarLuminosity', v)} defaultValue={EARTH_PARAMS.solarLuminosity} />
                     
                     <Slider label="軌道長半径" value={planet.semiMajorAxis} min={0.5} max={2.0} step={0.01} unit="AU" color="orange"
                         onChange={(v:number) => updatePlanet('semiMajorAxis', v)} defaultValue={EARTH_PARAMS.semiMajorAxis} />
                     
-                    <Slider label="公転周期" value={planet.orbitalPeriod} min={1000} max={20000} step={100} unit="h" color="orange"
+                    <Slider label="公転周期" value={planet.orbitalPeriod} min={1000} max={20000} step={100} unit="時間" color="orange"
                         onChange={(v:number) => updatePlanet('orbitalPeriod', v)} defaultValue={EARTH_PARAMS.orbitalPeriod} />
                     
                     <Slider label="離心率" value={planet.eccentricity} min={0} max={0.2} step={0.001} unit="" color="orange"
@@ -268,7 +267,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                 <div className="flex-1 grid grid-cols-2 gap-4">
                     <div className="col-span-1">
                         <CircularDial 
-                            label="近日点引数 (Perihelion)" 
+                            label="近日点引数" 
                             value={planet.perihelionAngle} 
                             min={0} 
                             max={360} 
@@ -279,7 +278,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
                     <div className="col-span-1">
                          <QuadrantDial 
-                            label="地軸傾斜角 (Obliquity)" 
+                            label="地軸傾斜角" 
                             value={planet.obliquity} 
                             min={0} 
                             max={90} 
@@ -294,18 +293,18 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
 
         {activeTab === 'atmos' && (
             <div className="animate-[fadeIn_0.15s_ease-out]">
-                 <h3 className="text-xs font-bold text-purple-400 uppercase border-b border-purple-900/50 pb-1 mb-3">大気・海洋</h3>
+                 <h3 className="text-xs font-bold text-purple-400 uppercase border-b border-purple-900/50 pb-1 mb-3">大気・海洋特性</h3>
                  <div className="grid grid-cols-2 gap-4">
-                    <Slider label="地表気圧" value={atm.surfacePressure} min={0.1} max={5} step={0.1} unit="bar" color="purple"
+                    <Slider label="平均表面気圧" value={atm.surfacePressure} min={0.1} max={5} step={0.1} unit="bar" color="purple"
                         onChange={(v:number) => updateAtm('surfacePressure', v)} defaultValue={EARTH_ATMOSPHERE.surfacePressure} />
 
-                    <Slider label="温室効果係数" value={atm.greenhouseFactor} min={0} max={5} step={0.1} unit="x Earth" color="purple"
+                    <Slider label="温室効果係数" value={atm.greenhouseFactor} min={0} max={5} step={0.1} unit="x 地球" color="purple"
                         onChange={(v:number) => updateAtm('greenhouseFactor', v)} defaultValue={EARTH_ATMOSPHERE.greenhouseFactor} />
                     
-                    <Slider label="熱輸送効率" value={atm.meridionalTransport} min={0} max={300} step={1} unit="coeff" color="purple"
+                    <Slider label="熱輸送効率" value={atm.meridionalTransport} min={0} max={300} step={1} unit="係数" color="purple"
                         onChange={(v:number) => updateAtm('meridionalTransport', v)} defaultValue={EARTH_ATMOSPHERE.meridionalTransport} />
                     
-                    <Slider label="海洋熱容量" value={atm.heatCapacityOcean} min={0.1} max={5.0} step={0.1} unit="x" color="purple"
+                    <Slider label="海洋熱容量" value={atm.heatCapacityOcean} min={0.1} max={5.0} step={0.1} unit="倍" color="purple"
                         onChange={(v:number) => updateAtm('heatCapacityOcean', v)} defaultValue={EARTH_ATMOSPHERE.heatCapacityOcean} />
                  </div>
             </div>
@@ -314,74 +313,74 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
         {activeTab === 'physics' && (
             <div className="animate-[fadeIn_0.15s_ease-out]">
                  <div className="flex justify-between items-center border-b border-red-900/50 pb-1 mb-3">
-                     <h3 className="text-xs font-bold text-red-400 uppercase">物理エンジン・チューニング</h3>
-                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Step 1: ITCZ Circulation</span>
+                     <h3 className="text-xs font-bold text-red-400 uppercase">物理演算チューニング</h3>
+                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Step 1: ITCZ・大気循環</span>
                  </div>
                  
                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-red-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">1.2 影響マップ係数</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">1.2 熱影響マップ係数</div>
                         <div className="space-y-1">
-                            <Slider label="飽和距離" value={phys.itczSaturationDist} min={100} max={5000} step={100} unit="km" color="red"
+                            <Slider label="熱飽和距離" value={phys.itczSaturationDist} min={100} max={5000} step={100} unit="km" color="red"
                                 onChange={(v:number) => updatePhys('itczSaturationDist', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.itczSaturationDist} />
-                            <Slider label="限界高度" value={phys.itczAltitudeLimit} min={0.5} max={10} step={0.1} unit="km" color="red"
+                            <Slider label="熱限界高度" value={phys.itczAltitudeLimit} min={0.5} max={10} step={0.1} unit="km" color="red"
                                 onChange={(v:number) => updatePhys('itczAltitudeLimit', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.itczAltitudeLimit} />
                         </div>
                     </div>
 
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-red-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">1.3 惑星係数</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">1.3 惑星スケール係数</div>
                         <div className="space-y-1">
-                            <Slider label="慣性指数" value={phys.itczInertiaExp} min={0.1} max={2.0} step={0.1} unit="exp" color="red"
+                            <Slider label="熱慣性指数" value={phys.itczInertiaExp} min={0.1} max={2.0} step={0.1} unit="exp" color="red"
                                 onChange={(v:number) => updatePhys('itczInertiaExp', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.itczInertiaExp} />
-                            <Slider label="海:移動率" value={phys.itczBaseSeaRatio} min={0} max={1.5} step={0.05} unit="x" color="red"
+                            <Slider label="海洋移動感度" value={phys.itczBaseSeaRatio} min={0} max={1.5} step={0.05} unit="倍" color="red"
                                 onChange={(v:number) => updatePhys('itczBaseSeaRatio', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.itczBaseSeaRatio} />
-                            <Slider label="陸:移動率" value={phys.itczBaseLandRatio} min={0} max={1.5} step={0.05} unit="x" color="red"
+                            <Slider label="陸地移動感度" value={phys.itczBaseLandRatio} min={0} max={1.5} step={0.05} unit="倍" color="red"
                                 onChange={(v:number) => updatePhys('itczBaseLandRatio', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.itczBaseLandRatio} />
                         </div>
                     </div>
                  </div>
 
                  <div className="flex justify-between items-center border-b border-cyan-900/50 pb-1 mb-3 mt-4">
-                     <h3 className="text-xs font-bold text-cyan-400 uppercase">Step 2: Ocean Currents</h3>
+                     <h3 className="text-xs font-bold text-cyan-400 uppercase">Step 2: 海流シミュレーション</h3>
                      <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 2.0 - 2.3</span>
                  </div>
                  
                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-20">
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.0 Collision & Spawn</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.0 衝突判定と生成</div>
                         <div className="space-y-1">
                              <Slider label="衝突バッファ" value={phys.oceanCollisionBuffer} min={0} max={maxCollisionBuffer} step={10} unit="km" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanCollisionBuffer', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanCollisionBuffer} />
-                             <Slider label="平滑化強度" value={phys.oceanSmoothing} min={0} max={10} step={1} unit="iter" color="cyan"
+                             <Slider label="境界平滑化" value={phys.oceanSmoothing} min={0} max={10} step={1} unit="回" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanSmoothing', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanSmoothing} />
-                             <Slider label="スポーン距離" value={phys.oceanSpawnOffset || 1000} min={0} max={maxSpawnOffset} step={100} unit="km" color="cyan"
+                             <Slider label="発生オフセット" value={phys.oceanSpawnOffset || 1000} min={0} max={maxSpawnOffset} step={100} unit="km" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanSpawnOffset', v)} defaultValue={1000} />
                         </div>
                     </div>
 
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.1 Base Physics</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.1 基本流体力学</div>
                         <div className="space-y-1">
-                             <Slider label="シミュレーション歩数" value={phys.oceanStreamlineSteps || 500} min={100} max={2000} step={100} unit="steps" color="cyan"
+                             <Slider label="解析ステップ数" value={phys.oceanStreamlineSteps || 500} min={100} max={2000} step={100} unit="steps" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanStreamlineSteps', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanStreamlineSteps} />
-                             <Slider label="流速係数" value={phys.oceanBaseSpeed} min={0.5} max={5.0} step={0.1} unit="x" color="cyan"
+                             <Slider label="基本流速" value={phys.oceanBaseSpeed} min={0.5} max={5.0} step={0.1} unit="倍" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanBaseSpeed', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanBaseSpeed} />
-                             <Slider label="ITCZ引力" value={phys.oceanPatternForce} min={0.01} max={0.5} step={0.01} unit="k" color="cyan"
+                             <Slider label="ITCZ 引力" value={phys.oceanPatternForce} min={0.01} max={0.5} step={0.01} unit="k" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanPatternForce', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanPatternForce} />
-                             <Slider label="拡散限界" value={phys.oceanDeflectLat} min={5} max={45} step={1} unit="deg" color="cyan"
+                             <Slider label="拡散限界角" value={phys.oceanDeflectLat} min={5} max={45} step={1} unit="度" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanDeflectLat', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanDeflectLat} />
                         </div>
                     </div>
 
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.2 EC Tuning</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.2 EC チューニング</div>
                         <div className="space-y-1">
                              <Slider label="EC 引力係数" value={phys.oceanEcPatternForce} min={0.01} max={0.5} step={0.01} unit="P" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanEcPatternForce', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcPatternForce} />
                              <Slider label="EC 制動(Damp)" value={phys.oceanEcDamping} min={0} max={1.0} step={0.05} unit="D" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanEcDamping', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcDamping} />
-                             <Slider label="分離幅 (Gap)" value={phys.oceanEcLatGap} min={2.0} max={20.0} step={0.5} unit="deg" color="cyan"
+                             <Slider label="分離幅 (Gap)" value={phys.oceanEcLatGap} min={2.0} max={20.0} step={0.5} unit="度" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanEcLatGap', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcLatGap} />
                              <Slider label="極方向ドリフト" value={phys.oceanEcPolewardDrift} min={0} max={5.0} step={0.1} unit="vy" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanEcPolewardDrift', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcPolewardDrift} />
@@ -389,17 +388,17 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
                     
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.3 Advanced Flow</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.3 高度な流れ制御</div>
                         <div className="space-y-1">
-                             <Slider label="スポーン速度" value={phys.oceanSpawnSpeedMultiplier} min={0.1} max={2.0} step={0.1} unit="x" color="cyan"
+                             <Slider label="生成時初速" value={phys.oceanSpawnSpeedMultiplier} min={0.1} max={2.0} step={0.1} unit="倍" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanSpawnSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanSpawnSpeedMultiplier} />
-                             <Slider label="這行速度" value={phys.oceanCrawlSpeedMultiplier} min={0.1} max={3.0} step={0.1} unit="x" color="cyan"
+                             <Slider label="沿岸這行速度" value={phys.oceanCrawlSpeedMultiplier} min={0.1} max={3.0} step={0.1} unit="倍" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanCrawlSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanCrawlSpeedMultiplier} />
-                             <Slider label="最大速度Cap" value={phys.oceanMaxSpeedMultiplier} min={1.0} max={10.0} step={0.5} unit="x" color="cyan"
+                             <Slider label="最高速度制限" value={phys.oceanMaxSpeedMultiplier} min={1.0} max={10.0} step={0.5} unit="倍" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanMaxSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanMaxSpeedMultiplier} />
-                             <Slider label="慣性 (X)" value={phys.oceanInertiaX} min={0.01} max={0.5} step={0.01} unit="ratio" color="cyan"
+                             <Slider label="速度慣性 (X)" value={phys.oceanInertiaX} min={0.01} max={0.5} step={0.01} unit="ratio" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanInertiaX', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanInertiaX} />
-                             <Slider label="沿岸反発力" value={phys.oceanRepulseStrength} min={0.0} max={2.0} step={0.1} unit="str" color="cyan"
+                             <Slider label="沿岸反発強度" value={phys.oceanRepulseStrength} min={0.0} max={2.0} step={0.1} unit="str" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanRepulseStrength', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanRepulseStrength} />
                         </div>
                     </div>
