@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { DebugSimulationData, DebugAgentSnapshot, PlanetParams } from '../types';
 import { computeOceanCurrents } from '../services/physics/ocean'; // Unified Engine
@@ -8,14 +7,15 @@ interface Props {
     grid: any[];
     itczLines: number[][];
     config: SimulationConfig;
-    phys: PhysicsParams;
+    phys: PhysicsParams; // Raw Configured Physics
+    effectivePhys?: PhysicsParams; // Unit J: Effective Physics (with Derived Gap)
     planet: PlanetParams;
     cellCount: number;
     hadleyWidth?: number;
     onClose: () => void;
 }
 
-const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet, cellCount, hadleyWidth, onClose }) => {
+const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effectivePhys, planet, cellCount, hadleyWidth, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [debugData, setDebugData] = useState<DebugSimulationData | null>(null);
     const [currentStep, setCurrentStep] = useState(0);
@@ -34,11 +34,15 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
 
     const mapSize = { width: 800, height: 400 };
 
+    // Unit J: Use effective parameters for re-calculation if provided
+    const activePhys = effectivePhys || phys;
+
     useEffect(() => {
         setLoading(true);
         
         const timer = setTimeout(() => {
-            const result = computeOceanCurrents(grid, itczLines, phys, config, planet, targetMonth);
+            // Unit J: Re-calculate using active (effective) physics to match simulation result
+            const result = computeOceanCurrents(grid, itczLines, activePhys, config, planet, targetMonth);
             if (result.debugData) {
                 setDebugData(result.debugData);
                 setCurrentStep(0);
@@ -48,7 +52,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
         }, 100);
         
         return () => clearTimeout(timer);
-    }, [grid, itczLines, config, phys, planet, targetMonth]);
+    }, [grid, itczLines, config, activePhys, planet, targetMonth]);
 
     // Playback Loop
     useEffect(() => {
@@ -163,7 +167,8 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
 
         // 2b. EC Targets
         if (showOverlayECTargets && debugData.itczLine) {
-            const gap = phys.oceanEcLatGap;
+            // Unit J: Use activePhys gap for guides
+            const gap = activePhys.oceanEcLatGap;
             const ecN = debugData.itczLine.map(l => l + gap);
             const ecS = debugData.itczLine.map(l => l - gap);
             renderLatPolyline(ecN, 'rgba(0, 255, 255, 0.6)', [2, 4], 1);
@@ -234,7 +239,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
             renderAgent(agent, mapSize.width);
         });
 
-    }, [debugData, currentStep, mapSize, showOverlayITCZ, showOverlayECTargets, showOverlayCells, cellCount, phys]);
+    }, [debugData, currentStep, mapSize, showOverlayITCZ, showOverlayECTargets, showOverlayCells, cellCount, activePhys]);
 
     // Interaction for Hover
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -278,6 +283,8 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
         'stuck': '停滞',
         'dead': '消滅'
     };
+
+    const isCoupled = phys.oceanEcLatGap !== activePhys.oceanEcLatGap;
 
     return (
         <div className="fixed inset-0 z-[100] bg-black/80 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
@@ -361,9 +368,22 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, planet
                              </label>
                         </div>
                         
-                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">物理パラメータ</h3>
+                        <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">物理パラメータ (Unit J)</h3>
                         <div className="space-y-1 text-[10px] font-mono text-gray-400 mb-6 pl-2 border-l-2 border-gray-700">
-                            <div className="flex justify-between"><span>EC 分離幅:</span> <span className="text-cyan-300">{phys.oceanEcLatGap.toFixed(1)}°</span></div>
+                            <div className="flex justify-between">
+                                <span>設定 Gap:</span> 
+                                <span className="text-gray-500">{phys.oceanEcLatGap.toFixed(1)}°</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span>実効 Gap:</span> 
+                                <span className={`font-bold ${isCoupled ? 'text-cyan-400' : 'text-gray-300'}`}>
+                                    {activePhys.oceanEcLatGap.toFixed(1)}°
+                                </span>
+                            </div>
+                            <div className="mt-2 text-[8px] text-gray-600 uppercase">
+                                {isCoupled ? "※風帯モデルから継承" : "※物理設定値をそのまま使用"}
+                            </div>
+                            <div className="w-full h-px bg-gray-800 my-2"></div>
                             <div className="flex justify-between"><span>セル数:</span> <span className="text-white">{cellCount}</span></div>
                             <div className="flex justify-between"><span>セル幅:</span> <span>{(90/cellCount).toFixed(1)}°</span></div>
                             <div className="flex justify-between"><span>自転逆転:</span> <span className={planet.isRetrograde ? "text-orange-400" : "text-gray-500"}>{planet.isRetrograde ? "あり" : "なし"}</span></div>

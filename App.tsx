@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Controls from './components/Controls';
 import MapVisualizer from './components/MapVisualizer';
 import Charts from './components/Charts';
@@ -32,6 +31,13 @@ const App: React.FC = () => {
   const [mapSize, setMapSize] = useState({ width: 800, height: 400 });
   
   const [processingStep, setProcessingStep] = useState<string | null>(null);
+
+  // Unit J: Effective Physics Calculation
+  // Derived from the wind belt analysis if available, otherwise fallback to raw physics params.
+  const effectivePhys = useMemo(() => {
+    if (!result || !result.wind) return phys;
+    return { ...phys, oceanEcLatGap: result.wind.oceanEcLatGapDerived };
+  }, [phys, result]);
 
   // Initial Load
   useEffect(() => {
@@ -122,7 +128,8 @@ const App: React.FC = () => {
              grid={result.grid}
              itczLines={result.itczLines}
              config={config}
-             phys={phys}
+             phys={phys} // Raw phys for "Configured" display
+             effectivePhys={effectivePhys} // Effective phys for re-calculation and guides
              planet={planet}
              cellCount={result.cellCount}
              hadleyWidth={result.hadleyWidth}
@@ -248,7 +255,7 @@ const App: React.FC = () => {
                         displayMonth={displayMonth}
                         width={mapSize.width} 
                         height={mapSize.height}
-                        physicsParams={phys}
+                        physicsParams={effectivePhys} // Unit J: Use effective params for visualization
                         zoom={config.zoom}
                         onZoomChange={(z) => setConfig(prev => ({...prev, zoom: z}))}
                     />
