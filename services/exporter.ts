@@ -1,340 +1,224 @@
-import JSZip from 'jszip';
-import * as d3 from 'd3';
-import { SimulationResult, PlanetParams, AtmosphereParams, SimulationConfig, GridCell, PhysicsParams } from '../types';
-import { KOPPEN_COLORS, CURRENT_COLORS } from '../constants';
-import { hexToRgb, d3ColorToRgb } from './utils/helpers';
 
-// Draw Legend onto Canvas
-const drawLegend = (ctx: CanvasRenderingContext2D, mode: string, width: number, height: number) => {
-    const padding = 10;
-    const boxWidth = 260; 
-    
+import JSZip from 'jszip';
+// Added missing d3 import
+import * as d3 from 'd3';
+import { SimulationResult, PlanetParams, AtmosphereParams, SimulationConfig, PhysicsParams } from '../types';
+import { KOPPEN_COLORS } from '../constants';
+import { hexToRgb } from './utils/helpers';
+import { drawPixels } from '../components/visualizer/PixelRenderer';
+import { drawOverlays } from '../components/visualizer/OverlayRenderer';
+import { 
+    tempScale, precipScale, precipScaleMonthly, insolationScale, 
+    coastScaleLand, coastScaleOcean, 
+    oceanGradient, landGradient
+} from '../components/visualizer/constants';
+
+// Draw Legend onto Canvas (Optimized for Exporter)
+const drawLegend = (ctx: CanvasRenderingContext2D, mode: string, width: number, height: number, displayMonth: number | 'annual') => {
+    const padding = 20;
+    const boxWidth = 320; 
     const x = width - boxWidth - padding;
     const y = padding;
 
-    // Background
-    ctx.fillStyle = 'rgba(17, 24, 39, 0.95)'; // Darker opaque
+    // Legend Backdrop
+    ctx.fillStyle = 'rgba(3, 7, 18, 0.9)';
     ctx.strokeStyle = 'rgba(75, 85, 99, 0.5)';
     ctx.lineWidth = 1;
     
-    const drawBox = (h: number) => {
-        ctx.fillRect(x, y, boxWidth, h);
-        ctx.strokeRect(x, y, boxWidth, h);
+    const modeLabels: Record<string, string> = {
+        'temp': 'Surface Temperature',
+        'tempZonal': 'Zonal Mean Temperature',
+        'precip': 'Precipitation Distribution',
+        'climate': 'Köppen Climate Classification',
+        'insolation': 'Solar Insolation',
+        'elevation': 'Planetary Topography',
+        'distCoast': 'Distance from Coastline',
+        'itcz_heatmap': 'ITCZ Influence Map',
+        'itcz_result': 'ITCZ Calculated Latitudes',
+        'wind': 'Zonal Wind & Pressure',
+        'wind_belts': 'Atmospheric Circulation Belts',
+        'ocean_collision': 'Oceanic Collision Field',
+        'oceanCurrent': 'Global Ocean Currents'
     };
 
-    const drawTitle = (title: string) => {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.fillText(title, x + 10, y + 20);
-        ctx.beginPath();
-        ctx.moveTo(x + 10, y + 28);
-        ctx.lineTo(x + boxWidth - 10, y + 28);
-        ctx.strokeStyle = '#4b5563';
-        ctx.stroke();
-    };
+    const title = modeLabels[mode] || mode;
+    const isMonthly = displayMonth !== 'annual';
+    const monthLabel = displayMonth === 0 ? 'January' : (displayMonth === 6 ? 'July' : (isMonthly ? `Month ${displayMonth + 1}` : 'Annual Mean'));
 
-    const drawGradient = (colors: string[], labels: string[], topOffset: number, customH?: number) => {
-        const gradX = x + 10;
-        const gradY = y + topOffset;
-        const gradW = boxWidth - 20;
-        const gradH = customH || 15;
+    // Dynamic box height based on mode
+    let boxHeight = 160;
+    if (mode === 'climate') boxHeight = 480;
+    if (mode === 'oceanCurrent') boxHeight = 220;
+
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxWidth, boxHeight, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    // Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(title, x + 20, y + 35);
+    
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText(monthLabel, x + 20, y + 55);
+
+    ctx.beginPath();
+    ctx.moveTo(x + 20, y + 65);
+    ctx.lineTo(x + boxWidth - 20, y + 65);
+    ctx.strokeStyle = '#374151';
+    ctx.stroke();
+
+    const drawGradient = (scale: any, labels: string[], top: number, labelTitle?: string) => {
+        const gradX = x + 20;
+        const gradY = y + top;
+        const gradW = boxWidth - 40;
+        const gradH = 16;
+
+        if (labelTitle) {
+            ctx.fillStyle = '#d1d5db';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillText(labelTitle.toUpperCase(), gradX, gradY - 8);
+        }
 
         const grad = ctx.createLinearGradient(gradX, 0, gradX + gradW, 0);
-        colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
+        const domain = scale.domain();
+        domain.forEach((d: number, i: number) => {
+            const t = i / (domain.length - 1);
+            grad.addColorStop(t, scale(d));
+        });
         
         ctx.fillStyle = grad;
         ctx.fillRect(gradX, gradY, gradW, gradH);
-        ctx.strokeStyle = '#6b7280';
+        ctx.strokeStyle = '#4b5563';
         ctx.strokeRect(gradX, gradY, gradW, gradH);
 
-        if (labels.length > 0) {
-            ctx.fillStyle = '#d1d5db';
-            ctx.font = '10px monospace';
-            ctx.textAlign = 'center';
-            
-            labels.forEach((l, i) => {
-                const lx = gradX + (gradW / (labels.length - 1)) * i;
-                // Adjust first and last to stay in bounds
-                let alignX = lx;
-                if (i === 0) { ctx.textAlign = 'left'; alignX = gradX; }
-                else if (i === labels.length - 1) { ctx.textAlign = 'right'; alignX = gradX + gradW; }
-                else ctx.textAlign = 'center';
-                
-                ctx.fillText(l, alignX, gradY + gradH + 13);
-            });
-            ctx.textAlign = 'left'; // Reset
-        }
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '10px monospace';
+        labels.forEach((l, i) => {
+            const lx = gradX + (gradW / (labels.length - 1)) * i;
+            ctx.textAlign = i === 0 ? 'left' : (i === labels.length - 1 ? 'right' : 'center');
+            ctx.fillText(l, lx, gradY + gradH + 15);
+        });
     };
 
-    if (mode === 'distCoast') {
-        drawBox(100);
-        drawTitle('内陸度 / 海洋深度 (km)');
-        
-        ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif';
-        ctx.fillText('Land: Coast -> Inland', x + 10, y + 40);
-        drawGradient(['#74c476', '#00441b'], ['0 km', '', '2000 km+'], 42, 10);
-
-        ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif';
-        ctx.fillText('Ocean: Coast -> Deep', x + 10, y + 68);
-        drawGradient(['#6baed6', '#08306b'], ['0 km', '', '3000 km+'], 70, 10);
-
-    } else if (mode === 'elevation' || mode === 'itcz_result' || mode === 'oceanCurrent') {
-        drawBox(120);
-        const labels: Record<string, string> = {
-            'elevation': '標高 (Elevation)',
-            'itcz_result': 'ITCZ 計算結果',
-            'oceanCurrent': '海流 (Ocean Current)'
-        };
-        drawTitle(labels[mode]);
-        
-        let curY = y + 40;
-        // Simple scale
-        const colors = ["#663301", "#995a32", "#cc9a45", "#c7db7a", "#7fb86e", "#7fcdbb", "#081d58"];
-        const w = (boxWidth - 20) / colors.length;
-        
-        colors.forEach((c, i) => {
-             ctx.fillStyle = c;
-             ctx.fillRect(x + 10 + i*w, curY, w, 15);
-        });
-        
-        ctx.fillStyle = '#d1d5db';
-        ctx.font = '10px monospace';
-        ctx.fillText('High', x + 10, curY + 28);
-        ctx.textAlign = 'right';
-        ctx.fillText('Deep', x + boxWidth - 10, curY + 28);
-        ctx.textAlign = 'left';
-
-        if (mode === 'itcz_result') {
-            curY += 35;
-            const drawLineLegend = (color: string, label: string) => {
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x + 10, curY + 5);
-                ctx.lineTo(x + 40, curY + 5);
-                ctx.stroke();
-                ctx.fillStyle = '#d1d5db';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText(label, x + 50, curY + 9);
-                curY += 20;
-            };
-            drawLineLegend('#FFFF00', 'Annual Mean');
-            drawLineLegend('rgba(255, 100, 100, 0.8)', 'July (Summer N)');
-            drawLineLegend('rgba(100, 100, 255, 0.8)', 'Jan (Summer S)');
+    if (mode === 'temp' || mode === 'tempZonal') {
+        drawGradient(tempScale, ['-40°C', '0°C', '+40°C'], 95);
+    } else if (mode === 'precip') {
+        if (displayMonth === 'annual') {
+            drawGradient(precipScale, ['0', '1500', '3000+ mm'], 95, 'Annual Total');
+        } else {
+            drawGradient(precipScaleMonthly, ['0', '200', '400+ mm'], 95, 'Monthly Total');
         }
-        else if (mode === 'oceanCurrent') {
-             curY += 35;
-             const drawLineLegend = (color: string, label: string) => {
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x + 10, curY + 5);
-                ctx.lineTo(x + 40, curY + 5);
-                ctx.stroke();
-                ctx.fillStyle = '#d1d5db';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText(label, x + 50, curY + 9);
-                curY += 20;
-             };
-             
-             drawLineLegend('rgba(0,0,0,0.8)', 'Ocean Current');
-             drawLineLegend('rgba(0, 255, 255, 0.8)', 'EC Attractor');
-        }
-
+    } else if (mode === 'distCoast') {
+        drawGradient(coastScaleLand, ['Coast', '2k km'], 95, 'Land Distance');
+        drawGradient(coastScaleOcean, ['Coast', '-3k km'], 145, 'Ocean Distance');
+    } else if (mode === 'elevation') {
+        drawGradient(landGradient, ['0m', '1km', '2km+'], 95, 'Land Elevation');
+        drawGradient(oceanGradient, ['-8km', '-4km', '0m'], 145, 'Ocean Depth');
+    } else if (mode === 'insolation') {
+        drawGradient(insolationScale, ['0', '250', '500 W/m²'], 95);
     } else if (mode === 'itcz_heatmap') {
-        drawBox(90);
-        drawTitle('ITCZ 影響度 (HeatMap)');
-        // RdBu inverted
-        drawGradient(['#2166ac', '#f7f7f7', '#b2182b'], ['Ocean (-1)', '0', 'Inland (+1)'], 40, 15);
+        const itczScale = d3.scaleDiverging(d3.interpolateRdBu).domain([-1, 0, 1]);
+        drawGradient(itczScale, ['Ocean (-1)', 'Coast', 'Land (+1)'], 95);
+    } else if (mode === 'wind' || mode === 'wind_belts') {
+        const pScale = d3.scaleDiverging(d3.interpolateRdBu).domain([990, 1013, 1030]);
+        drawGradient(pScale, ['Low P', '1013', 'High P'], 95, 'Air Pressure (hPa)');
+    } else if (mode === 'oceanCurrent') {
+        const startY = 85;
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'left';
+        
+        // ECC Marker
+        ctx.fillStyle = '#ff4444';
+        ctx.fillText('×', x + 20, startY + 10);
+        ctx.fillStyle = '#d1d5db';
+        ctx.fillText('ECC Coastal Impact (Warm)', x + 40, startY + 10);
+
+        // EC Marker
+        ctx.fillStyle = '#44ffff';
+        ctx.fillText('+', x + 20, startY + 30);
+        ctx.fillStyle = '#d1d5db';
+        ctx.fillText('EC Coastal Impact (Cold)', x + 40, startY + 30);
+
+        // Flow directions
+        drawGradient(d3.scaleLinear<string>().domain([0, 1]).range(['#000000', '#ff0000']), ['Slow', 'Fast'], startY + 70, 'Warm Current (Leaving Tropics)');
+        drawGradient(d3.scaleLinear<string>().domain([0, 1]).range(['#000000', '#0088ff']), ['Slow', 'Fast'], startY + 120, 'Cold Current (Approaching Tropics)');
+    } else if (mode === 'climate') {
+        const startY = 85;
+        const itemWidth = 90;
+        const itemHeight = 22;
+        const cols = 3;
+        const classes = Object.keys(KOPPEN_COLORS);
+        
+        ctx.font = '9px sans-serif';
+        classes.forEach((code, i) => {
+            const row = Math.floor(i / cols);
+            const col = i % cols;
+            const curX = x + 20 + col * itemWidth;
+            const curY = y + startY + row * itemHeight;
+            
+            ctx.fillStyle = KOPPEN_COLORS[code];
+            ctx.fillRect(curX, curY, 12, 12);
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.strokeRect(curX, curY, 12, 12);
+            
+            ctx.fillStyle = '#d1d5db';
+            ctx.textAlign = 'left';
+            ctx.fillText(code, curX + 18, curY + 10);
+        });
     }
-    
-    // Add Metadata Footer
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0, height - 20, width, 20);
-    ctx.fillStyle = '#9ca3af';
-    ctx.font = '10px monospace';
+
+    // Watermark
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.font = 'italic 12px serif';
     ctx.textAlign = 'right';
-    ctx.fillText('Generated by ExoClim Simulator', width - 10, height - 6);
+    ctx.fillText('ExoClim Engine v6.0 • Procedural Generation', width - padding - 10, height - padding);
 };
 
-// Generate Image Blob for a specific map mode
-const generateMapBlob = async (data: SimulationResult, mode: string, width: number, height: number, phys?: PhysicsParams): Promise<Blob | null> => {
+// Generate Image Blob matching UI rendering
+const generateMapBlob = async (data: SimulationResult, mode: string, width: number, height: number, displayMonth: number | 'annual', phys: PhysicsParams): Promise<Blob | null> => {
+    const lats = new Set(data.grid.map(c => c.lat));
+    const gridRows = lats.size;
+    const gridCols = data.grid.length / gridRows;
+
+    // 1. Create pixel buffer at simulation resolution
+    const buffer = document.createElement('canvas');
+    buffer.width = gridCols;
+    buffer.height = gridRows;
+    const bufferCtx = buffer.getContext('2d');
+    if (!bufferCtx) return null;
+
+    // Use the exact same pixel rendering as UI
+    drawPixels(bufferCtx, data, mode, displayMonth as any, gridCols, gridRows, true);
+
+    // 2. Create high-res target canvas
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // 1. Draw Map Pixels
-    const lats = new Set(data.grid.map(c => c.lat));
-    const gridRows = lats.size;
-    const gridCols = data.grid.length / gridRows;
-
-    const imgData = ctx.createImageData(gridCols, gridRows);
-    const pixels = imgData.data;
-
-    // Scales
-    const oceanColor = d3.scaleLinear<string>()
-        .domain([-8000, -4000, -200, 0])
-        .range(["#081d58", "#1d91c0", "#41b6c4", "#7fcdbb"])
-        .clamp(true);
-    
-    const oceanBrightGradient = d3.scaleLinear<string>()
-        .domain([-8000, -200, 0])
-        .range(["#0066ff", "#00ccff", "#e0ffff"]) 
-        .clamp(true);
-
-    const landGradient = d3.scaleLinear<string>().domain([0, 200, 500, 1000, 2000]).range(["#7fb86e", "#c7db7a", "#cc9a45", "#995a32", "#663301"]).clamp(true);
-
-    const coastScaleLand = d3.scaleLinear<string>()
-        .domain([0, 2000])
-        .range(["#74c476", "#00441b"]) 
-        .clamp(true);
-    
-    const coastScaleOcean = d3.scaleLinear<string>()
-        .domain([0, -3000])
-        .range(["#6baed6", "#08306b"])
-        .clamp(true);
-
-    for (let i = 0; i < data.grid.length; i++) {
-        const cell = data.grid[i];
-        let r=0, g=0, b=0;
-
-        if (mode === 'distCoast') {
-             if (cell.distCoast >= 0) {
-                 [r,g,b] = d3ColorToRgb(coastScaleLand(cell.distCoast));
-             } else {
-                 [r,g,b] = d3ColorToRgb(coastScaleOcean(cell.distCoast));
-             }
-        } else if (mode === 'elevation' || mode === 'itcz_result' || mode === 'oceanCurrent') {
-            if (!cell.isLand) {
-                let cStr = oceanColor(cell.elevation);
-                if (mode === 'oceanCurrent') cStr = oceanBrightGradient(cell.elevation);
-                [r,g,b] = d3ColorToRgb(cStr);
-            } else {
-                [r,g,b] = d3ColorToRgb(landGradient(cell.elevation));
-            }
-            
-            if (mode === 'itcz_result' || (mode === 'oceanCurrent' && cell.isLand)) {
-                r *= 0.5; g *= 0.5; b *= 0.5;
-            }
-        } else if (mode === 'itcz_heatmap') {
-             const t = (cell.heatMapVal * -1 + 1) / 2;
-             [r,g,b] = d3ColorToRgb(d3.interpolateRdBu(t));
-        }
-
-        const pIdx = i * 4;
-        pixels[pIdx] = r; pixels[pIdx+1] = g; pixels[pIdx+2] = b; pixels[pIdx+3] = 255;
-    }
-    
-    const buffer = document.createElement('canvas');
-    buffer.width = gridCols;
-    buffer.height = gridRows;
-    buffer.getContext('2d')?.putImageData(imgData, 0, 0);
-
+    // Draw Background
     ctx.fillStyle = '#030712';
     ctx.fillRect(0, 0, width, height);
+
+    // Draw Pixel Map (Nearest Neighbor for crisp look like UI)
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(buffer, 0, 0, width, height);
 
-    const getX = (gridX: number) => (gridX / gridCols) * width;
-    const getY = (lat: number) => (90 - lat) / 180 * height;
+    // 3. Draw Overlays (Vector data)
+    // We pass zoom=1.0 and offsets=0 to draw the full global map
+    drawOverlays(
+        ctx, data, mode, width, height, 1.0, 0, 0, width, gridCols, gridRows, displayMonth as any, phys
+    );
 
-    // 2. Draw Vectors / Lines
-    if (mode === 'itcz_result' && data.itczLines && data.itczLines.length > 0) {
-        
-        const drawLine = (lineIndex: number | 'annual', color: string) => {
-             ctx.strokeStyle = color;
-             ctx.lineWidth = 3;
-             ctx.lineCap = 'round';
-             ctx.shadowColor = 'rgba(0,0,0,0.8)';
-             ctx.shadowBlur = 4;
-             ctx.beginPath();
+    // 4. Draw Comprehensive Legend
+    drawLegend(ctx, mode, width, height, displayMonth);
 
-             let lineData: number[] = [];
-             if (lineIndex === 'annual') {
-                  lineData = new Array(gridCols).fill(0);
-                  for(let c=0; c<gridCols; c++) {
-                      let sum = 0;
-                      for(let m=0; m<12; m++) sum += data.itczLines[m][c];
-                      lineData[c] = sum / 12;
-                  }
-             } else {
-                  lineData = data.itczLines[lineIndex];
-             }
-
-             ctx.moveTo(getX(0), getY(lineData[0]));
-             for(let c=1; c<gridCols; c++) {
-                 ctx.lineTo(getX(c), getY(lineData[c]));
-             }
-             ctx.stroke();
-             ctx.shadowBlur = 0;
-        };
-
-        drawLine(0, 'rgba(100, 100, 255, 0.8)');
-        drawLine(6, 'rgba(255, 100, 100, 0.8)');
-        drawLine('annual', '#FFFF00');
-    } 
-    else if (mode === 'oceanCurrent' && data.oceanStreamlines) {
-         // Draw EC Lines if Physics Params available
-         if (phys && data.itczLines && data.itczLines[6]) {
-            const itcz = data.itczLines[6]; // Use July base
-            const deflect = phys.oceanDeflectLat;
-            const separation = deflect / 2.0;
-
-            const drawAuxLine = (offset: number, color: string, dash: number[]) => {
-                 ctx.strokeStyle = color;
-                 ctx.lineWidth = 2;
-                 ctx.setLineDash(dash);
-                 ctx.beginPath();
-                 for(let c=0; c<gridCols; c++) {
-                     const y = getY(Math.max(-90, Math.min(90, itcz[c] + offset)));
-                     const x = getX(c);
-                     if (c===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-                 }
-                 ctx.stroke();
-                 ctx.setLineDash([]);
-            };
-
-            // EC Centerlines (Brighter Cyan and distinct dash)
-            drawAuxLine(separation, "rgba(0, 255, 255, 0.8)", [4, 4]);
-            drawAuxLine(-separation, "rgba(0, 255, 255, 0.8)", [4, 4]);
-
-            // ITCZ
-            drawAuxLine(0, "rgba(255, 255, 255, 0.8)", [8, 4]);
-         }
-
-         const lines = data.oceanStreamlines[6] || [];
-         ctx.strokeStyle = "rgba(0,0,0,0.8)";
-         
-         for (const line of lines) {
-             const strength = line.strength || 1.0;
-             ctx.lineWidth = Math.max(1.0, strength * 2.0);
-             ctx.beginPath();
-             const pts = line.points;
-             for(let i=0; i<pts.length; i++) {
-                 if (i===0) ctx.moveTo(getX(pts[i].x), getY(pts[i].lat));
-                 else {
-                     // Check wrap
-                     if (Math.abs(getX(pts[i].x) - getX(pts[i-1].x)) > width/2) {
-                         ctx.stroke(); ctx.beginPath(); ctx.moveTo(getX(pts[i].x), getY(pts[i].lat));
-                     } else {
-                         ctx.lineTo(getX(pts[i].x), getY(pts[i].lat));
-                     }
-                 }
-             }
-             ctx.stroke();
-         }
-    }
-
-    // 3. Draw Legend
-    drawLegend(ctx, mode, width, height);
-
-    return new Promise(resolve => {
-        canvas.toBlob(blob => resolve(blob), 'image/png');
-    });
+    return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/png', 1.0));
 };
 
 export const exportAllData = async (
@@ -347,72 +231,66 @@ export const exportAllData = async (
 ) => {
     const zip = new JSZip();
 
+    // Use Effective Physics for the export metadata (matching what was actually simulated)
+    const effectivePhys = { 
+        ...phys, 
+        oceanEcLatGap: result.wind?.oceanEcLatGapDerived ?? phys.oceanEcLatGap 
+    };
+
     // 1. Config & Metadata
     const metaData = {
+        exportedAt: new Date().toISOString(),
         planet,
         atmosphere: atm,
-        physics: phys,
-        config,
-        stats: {
-            globalTemp: "Not Calculated",
-            hadleyWidth: "Not Calculated"
+        physicsConfigured: phys,
+        physicsEffective: effectivePhys,
+        simulationConfig: config,
+        globalStats: {
+            hadleyWidth: result.hadleyWidth,
+            cellCount: result.cellCount,
+            globalTemp: result.globalTemp
         }
     };
-    zip.file("config.json", JSON.stringify(metaData, null, 2));
+    zip.file("Simulation_Metadata.json", JSON.stringify(metaData, null, 2));
     
-    // 2. CSV - Basic Grid Data (Limited to valid fields)
-    const csvRows = [];
-    csvRows.push("lat,lon,elevation,isLand,dist_coast_km,itcz_heatmap");
+    // 2. Datasets
+    const geoCsv = ["lat,lon,elevation_m,isLand,dist_coast_km,itcz_heatmap_val,collision_mask,climate"];
+    result.grid.forEach(c => {
+        geoCsv.push(`${c.lat.toFixed(3)},${c.lon.toFixed(3)},${c.elevation.toFixed(1)},${c.isLand?1:0},${c.distCoast.toFixed(1)},${c.heatMapVal.toFixed(4)},${c.collisionMask.toFixed(1)},${c.climateClass}`);
+    });
+    zip.file("Planetary_Geography.csv", geoCsv.join("\n"));
+
+    // 3. High-Resolution Map Images
+    const pipelineExports = [
+        { mode: 'elevation', name: 'Step0_Geography_Elevation' },
+        { mode: 'distCoast', name: 'Step0_Geography_DistCoast' },
+        { mode: 'itcz_heatmap', name: 'Step1_ITCZ_Heatmap' },
+        { mode: 'itcz_result', name: 'Step1_ITCZ_Lines' },
+        { mode: 'wind', name: 'Step2_Atmosphere_Pressure_Wind' },
+        { mode: 'wind_belts', name: 'Step2_Atmosphere_Belts' },
+        { mode: 'ocean_collision', name: 'Step3_Ocean_Collision' },
+        { mode: 'oceanCurrent', name: 'Step3_Ocean_Currents' }
+    ];
+
+    // Export high-res 4K-ish aspect
+    const imgWidth = 3840;
+    const imgHeight = 1920;
     
-    for(let i=0; i<result.grid.length; i++) {
-        const c = result.grid[i];
-        csvRows.push(`${c.lat},${c.lon},${c.elevation.toFixed(1)},${c.isLand?1:0},${c.distCoast.toFixed(1)},${c.heatMapVal.toFixed(3)}`);
-    }
-    zip.file("grid_geography.csv", csvRows.join("\n"));
+    // Default to July (6) for month-specific visualizations
+    const targetMonth = 6; 
 
-    // 3. ITCZ Lines CSV
-    if (result.itczLines && result.itczLines.length > 0) {
-        const itczRows = [];
-        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        itczRows.push(`lon_idx,lon_deg,${months.join(",")}`);
-        
-        const lats = new Set(result.grid.map(c => c.lat));
-        const gridRows = lats.size;
-        const gridCols = result.grid.length / gridRows;
-
-        for(let c=0; c<gridCols; c++) {
-            const lon = -180 + (c / gridCols) * 360;
-            const rowVals = [c, lon.toFixed(1)];
-            for(let m=0; m<12; m++) {
-                rowVals.push(result.itczLines[m][c].toFixed(2));
-            }
-            itczRows.push(rowVals.join(","));
-        }
-        zip.file("itcz_lines.csv", itczRows.join("\n"));
-    }
-
-    // 4. Ocean Currents JSON
-    if (result.oceanStreamlines) {
-         zip.file("ocean_streamlines.json", JSON.stringify(result.oceanStreamlines, null, 2));
-    }
-
-    // 5. Map Images
-    const modes = ['elevation', 'distCoast', 'itcz_heatmap', 'itcz_result', 'oceanCurrent'];
-    const w = 2000;
-    const h = 1000;
-    
-    for (const m of modes) {
-        const blob = await generateMapBlob(result, m, w, h, phys);
+    for (const exp of pipelineExports) {
+        const blob = await generateMapBlob(result, exp.mode, imgWidth, imgHeight, targetMonth, effectivePhys);
         if (blob) {
-            zip.file(`map_${m}.png`, blob);
+            zip.file(`${exp.name}.png`, blob);
         }
     }
 
-    // 6. Download
+    // 4. Finalize and Download
     const content = await zip.generateAsync({ type: "blob" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(content);
-    link.download = `exoclim_export_${Date.now()}.zip`;
+    link.download = `ExoClim_Full_Data_${planet.radius}km_${new Date().getTime()}.zip`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
