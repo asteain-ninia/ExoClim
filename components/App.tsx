@@ -34,7 +34,12 @@ const App: React.FC = () => {
   // Initial Load
   useEffect(() => {
     const init = async () => {
-        const grid = initializeGrid(DEFAULT_CONFIG.resolutionLat, DEFAULT_CONFIG.resolutionLon, DEFAULT_CONFIG.startingMap);
+        const grid = initializeGrid(
+          DEFAULT_CONFIG.resolutionLat,
+          DEFAULT_CONFIG.resolutionLon,
+          DEFAULT_CONFIG.startingMap,
+          DEFAULT_CONFIG.customMap
+        );
         setIsRunning(true);
         const res = await runSimulation(grid, EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_PHYSICS_PARAMS, DEFAULT_CONFIG, () => {});
         setResult(res);
@@ -62,7 +67,12 @@ const App: React.FC = () => {
     setProcessingStep("elevation");
     
     setTimeout(async () => {
-        const grid = initializeGrid(config.resolutionLat, config.resolutionLon, config.startingMap);
+        const grid = initializeGrid(
+          config.resolutionLat,
+          config.resolutionLon,
+          config.startingMap,
+          config.customMap
+        );
         const res = await runSimulation(grid, planet, atm, phys, config, (p, label, stepId) => {
              setProgress(p);
              if (label) setLoadingLabel(label);
