@@ -25,8 +25,20 @@ export const drawOverlays = (
     // --- WIND BELTS OVERLAY ---
     if (mode === 'wind_belts' && data.wind) {
         const w = data.wind;
-        const m = displayMonth === 'annual' ? 0 : displayMonth;
-        const itcz = data.itczLines ? data.itczLines[m] : null;
+        const isAnnual = displayMonth === 'annual';
+        let itcz: number[] | null = null;
+        if (data.itczLines) {
+            if (isAnnual) {
+                itcz = new Array(gridCols).fill(0);
+                for (let c = 0; c < gridCols; c++) {
+                    let sum = 0;
+                    for (let m = 0; m < 12; m++) sum += data.itczLines[m][c];
+                    itcz[c] = sum / 12;
+                }
+            } else {
+                itcz = data.itczLines[displayMonth];
+            }
+        }
 
         // 1. Cell Boundaries (Horizontal lines)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -164,20 +176,43 @@ export const drawOverlays = (
              ctx.setLineDash([]);
         };
 
-        drawSingleITCZ(6, "rgba(255, 100, 100, 0.8)", 1.0);
-        drawSingleITCZ(0, "rgba(100, 100, 255, 0.8)", 1.0);
-        drawSingleITCZ('annual', "#FFFF00", 1.5);
+        if (displayMonth === 'annual') {
+            drawSingleITCZ('annual', "#FFFF00", 1.5);
+        } else if (displayMonth === 0) {
+            drawSingleITCZ(0, "rgba(100, 100, 255, 0.8)", 1.0);
+        } else if (displayMonth === 6) {
+            drawSingleITCZ(6, "rgba(255, 100, 100, 0.8)", 1.0);
+        } else {
+            drawSingleITCZ(displayMonth, "rgba(255, 255, 255, 0.8)", 1.0);
+        }
     }
 
     const arrowsToDraw: {x: number, y: number, angle: number, color: string, scale: number}[] = [];
 
     // Ocean Currents
     if (mode === 'oceanCurrent' && data.oceanStreamlines) {
-        const m = displayMonth === 'annual' ? 0 : displayMonth; 
-        const lines = data.oceanStreamlines[m] || [];
+        const isAnnual = displayMonth === 'annual';
+        const availableMonths = data.oceanStreamlines
+            .map((monthLines, idx) => (monthLines && monthLines.length > 0 ? idx : -1))
+            .filter(idx => idx >= 0);
+        const monthsToDraw = isAnnual
+            ? (availableMonths.length > 0 ? availableMonths : [0])
+            : [displayMonth];
+
+        let annualItcz: number[] | null = null;
+        if (isAnnual && data.itczLines) {
+            annualItcz = new Array(gridCols).fill(0);
+            for (let c = 0; c < gridCols; c++) {
+                let sum = 0;
+                for (let m = 0; m < 12; m++) sum += data.itczLines[m][c];
+                annualItcz[c] = sum / 12;
+            }
+        }
+
+        const overlayItcz = isAnnual ? annualItcz : data.itczLines?.[displayMonth];
         
-        if (data.itczLines && data.itczLines[m]) {
-             const itcz = data.itczLines[m];
+        if (overlayItcz) {
+             const itcz = overlayItcz;
              
              if (physicsParams) {
                 const separation = physicsParams.oceanEcLatGap;
@@ -228,7 +263,7 @@ export const drawOverlays = (
              ctx.setLineDash([]);
         }
 
-        const drawStreamline = (line: OceanStreamline, xOff: number) => {
+        const drawStreamline = (line: OceanStreamline, xOff: number, itczRef: number[]) => {
             const pts = line.points;
             if (pts.length < 2) return;
             
@@ -238,8 +273,6 @@ export const drawOverlays = (
 
             let distanceAccumulator = 0;
             const arrowInterval = 80; 
-            const itczRef = data.itczLines?.[m] || [];
-
             for(let i=1; i<pts.length; i++) {
                  const p0 = pts[i-1];
                  const p1 = pts[i];
@@ -306,57 +339,62 @@ export const drawOverlays = (
             }
         };
         
-        for (const line of lines) {
-             let cx = startX;
-             while(cx < width) { drawStreamline(line, cx); cx += mapWidth; }
-        }
+        for (const m of monthsToDraw) {
+            const lines = data.oceanStreamlines[m] || [];
+            const itczRef = data.itczLines?.[m] || overlayItcz || [];
 
-        if (data.impactPoints && data.impactPoints[m]) {
-            const impacts = data.impactPoints[m];
-            
-            const drawImpactMarker = (im: any, xOff: number) => {
-                const rawX = im.x !== undefined ? im.x : (im.lon + 180) * (gridCols/360);
-                const normX = normalizeCol(rawX);
-                
-                const x = getX(normX) + xOff;
-                const y = getY(im.lat) + offsetY;
-                const size = 4 * Math.sqrt(zoom);
-                
-                if (im.type === 'ECC') {
-                    ctx.strokeStyle = '#ff4444';
-                    ctx.lineWidth = 2 * Math.sqrt(zoom);
-                    ctx.beginPath();
-                    ctx.moveTo(x - size, y - size);
-                    ctx.lineTo(x + size, y + size);
-                    ctx.moveTo(x + size, y - size);
-                    ctx.lineTo(x - size, y + size);
-                    ctx.stroke();
-                    ctx.fillStyle = 'rgba(255, 50, 50, 0.4)';
-                    ctx.beginPath();
-                    ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
-                    ctx.fill();
-                } else {
-                    ctx.strokeStyle = '#44ffff';
-                    ctx.lineWidth = 2 * Math.sqrt(zoom);
-                    ctx.beginPath();
-                    ctx.moveTo(x, y - size);
-                    ctx.lineTo(x, y + size);
-                    ctx.moveTo(x - size, y);
-                    ctx.lineTo(x + size, y);
-                    ctx.stroke();
-                    ctx.fillStyle = 'rgba(50, 255, 255, 0.4)';
-                    ctx.beginPath();
-                    ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            };
+            for (const line of lines) {
+                 let cx = startX;
+                 while(cx < width) { drawStreamline(line, cx, itczRef); cx += mapWidth; }
+            }
 
-            let cx = startX;
-            while(cx < width) {
-                for (const im of impacts) {
-                     drawImpactMarker(im, cx);
+            if (data.impactPoints && data.impactPoints[m]) {
+                const impacts = data.impactPoints[m];
+                
+                const drawImpactMarker = (im: any, xOff: number) => {
+                    const rawX = im.x !== undefined ? im.x : (im.lon + 180) * (gridCols/360);
+                    const normX = normalizeCol(rawX);
+                    
+                    const x = getX(normX) + xOff;
+                    const y = getY(im.lat) + offsetY;
+                    const size = 4 * Math.sqrt(zoom);
+                    
+                    if (im.type === 'ECC') {
+                        ctx.strokeStyle = '#ff4444';
+                        ctx.lineWidth = 2 * Math.sqrt(zoom);
+                        ctx.beginPath();
+                        ctx.moveTo(x - size, y - size);
+                        ctx.lineTo(x + size, y + size);
+                        ctx.moveTo(x + size, y - size);
+                        ctx.lineTo(x - size, y + size);
+                        ctx.stroke();
+                        ctx.fillStyle = 'rgba(255, 50, 50, 0.4)';
+                        ctx.beginPath();
+                        ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else {
+                        ctx.strokeStyle = '#44ffff';
+                        ctx.lineWidth = 2 * Math.sqrt(zoom);
+                        ctx.beginPath();
+                        ctx.moveTo(x, y - size);
+                        ctx.lineTo(x, y + size);
+                        ctx.moveTo(x - size, y);
+                        ctx.lineTo(x + size, y);
+                        ctx.stroke();
+                        ctx.fillStyle = 'rgba(50, 255, 255, 0.4)';
+                        ctx.beginPath();
+                        ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                };
+
+                let cx = startX;
+                while(cx < width) {
+                    for (const im of impacts) {
+                         drawImpactMarker(im, cx);
+                    }
+                    cx += mapWidth;
                 }
-                cx += mapWidth;
             }
         }
     }

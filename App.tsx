@@ -11,6 +11,9 @@ import { initializeGrid } from './services/geography';
 import { exportAllData } from './services/exporter';
 import { PlanetParams, AtmosphereParams, SimulationResult, SimulationConfig, PhysicsParams } from './types';
 
+const ANNUAL_ONLY_MODES = new Set(['elevation', 'distCoast', 'itcz_heatmap', 'ocean_collision', 'climate']);
+const NO_ANNUAL_MODES = new Set(['oceanCurrent']);
+
 const App: React.FC = () => {
   const [planet, setPlanet] = useState<PlanetParams>(EARTH_PARAMS);
   const [atm, setAtm] = useState<AtmosphereParams>(EARTH_ATMOSPHERE);
@@ -31,6 +34,9 @@ const App: React.FC = () => {
   const [mapSize, setMapSize] = useState({ width: 800, height: 400 });
   
   const [processingStep, setProcessingStep] = useState<string | null>(null);
+
+  const isAnnualOnlyMode = ANNUAL_ONLY_MODES.has(viewMode);
+  const isNoAnnualMode = NO_ANNUAL_MODES.has(viewMode);
 
   // Unit J: Effective Physics Calculation
   // Derived from the wind belt analysis if available, otherwise fallback to raw physics params.
@@ -67,6 +73,16 @@ const App: React.FC = () => {
     setTimeout(handleResize, 100);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (ANNUAL_ONLY_MODES.has(viewMode)) {
+        setDisplayMonth('annual');
+        return;
+    }
+    if (NO_ANNUAL_MODES.has(viewMode)) {
+        setDisplayMonth(0);
+    }
+  }, [viewMode]);
 
   const handleRun = useCallback(async (overrideConfig?: Partial<SimulationConfig>) => {
     setIsRunning(true);
@@ -173,7 +189,8 @@ const App: React.FC = () => {
                   <div className="flex items-center bg-gray-800 p-0.5 rounded-lg border border-gray-700 ml-4 shadow-inner">
                       <button 
                         onClick={() => setDisplayMonth(0)}
-                        className={`px-3 py-1 text-[10px] font-bold rounded transition-colors flex flex-col items-center leading-none ${displayMonth === 0 ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}
+                        disabled={isAnnualOnlyMode}
+                        className={`px-3 py-1 text-[10px] font-bold rounded transition-colors flex flex-col items-center leading-none ${displayMonth === 0 ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'} ${isAnnualOnlyMode ? 'opacity-40 cursor-not-allowed' : ''}`}
                         title="1月: 北半球 冬 / 南半球 夏"
                       >
                         <span>1月</span>
@@ -181,7 +198,8 @@ const App: React.FC = () => {
                       </button>
                       <button 
                         onClick={() => setDisplayMonth(6)}
-                        className={`px-3 py-1 text-[10px] font-bold rounded transition-colors flex flex-col items-center leading-none ${displayMonth === 6 ? 'bg-red-600 text-white shadow' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}
+                        disabled={isAnnualOnlyMode}
+                        className={`px-3 py-1 text-[10px] font-bold rounded transition-colors flex flex-col items-center leading-none ${displayMonth === 6 ? 'bg-red-600 text-white shadow' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'} ${isAnnualOnlyMode ? 'opacity-40 cursor-not-allowed' : ''}`}
                         title="7月: 北半球 夏 / 南半球 冬"
                       >
                         <span>7月</span>
@@ -190,7 +208,8 @@ const App: React.FC = () => {
                       <div className="w-px h-4 bg-gray-700 mx-1"></div>
                       <button 
                         onClick={() => setDisplayMonth('annual')}
-                        className={`px-3 py-1 text-[10px] font-bold rounded transition-colors flex flex-col items-center leading-none ${displayMonth === 'annual' ? 'bg-gray-600 text-white shadow' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}
+                        disabled={isNoAnnualMode}
+                        className={`px-3 py-1 text-[10px] font-bold rounded transition-colors flex flex-col items-center leading-none ${displayMonth === 'annual' ? 'bg-gray-600 text-white shadow' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'} ${isNoAnnualMode ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         <span>年平均</span>
                         <span className="text-[8px] opacity-70 font-normal">Avg</span>

@@ -59,8 +59,15 @@ const Legend: React.FC<{ mode: string }> = ({ mode }) => {
                     </div>
                     <p className="text-[9px] text-gray-400 mt-2 leading-tight">背景色は気圧、明るさは風速（東西U+南北V）を表現しています。</p>
                     {mode === 'wind_belts' && (
-                        <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-700/50 rounded text-[9px] text-yellow-200">
-                            ※将来的に循環セルの境界線や貿易風のピークがここに重畳表示されます。
+                        <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-700/50 rounded text-[9px] text-yellow-200 space-y-2">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-0 border-t border-dashed border-white/70"></div>
+                                <span>循環セル境界</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-0.5 bg-yellow-400/80"></div>
+                                <span>貿易風ピーク（ITCZ±オフセット）</span>
+                            </div>
                         </div>
                     )}
                 </div>
