@@ -15,7 +15,7 @@ interface Props {
   setConfig: React.Dispatch<React.SetStateAction<SimulationConfig>>;
   phys: PhysicsParams;
   setPhys: React.Dispatch<React.SetStateAction<PhysicsParams>>;
-  onRun: () => void;
+  onRun: (overrideConfig?: Partial<SimulationConfig>) => void;
   onExport: () => void;
   isRunning: boolean;
   progress: number;
@@ -59,7 +59,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
             const json = JSON.parse(event.target?.result as string) as CustomMapData;
             if (json.elevation && json.isLand && json.width && json.height) {
                 setConfig(prev => ({ ...prev, startingMap: 'CUSTOM', customMap: json }));
-                setTimeout(() => onRun(), 100);
+                onRun({ startingMap: 'CUSTOM', customMap: json });
             }
         } catch (err) { console.error(err); alert("マップ読込失敗"); }
     };

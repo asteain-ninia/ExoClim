@@ -68,20 +68,21 @@ const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(async (overrideConfig?: Partial<SimulationConfig>) => {
     setIsRunning(true);
     setProgress(0);
     setLoadingLabel("グリッド生成中...");
     setProcessingStep("elevation");
     
     setTimeout(async () => {
+        const runConfig = { ...config, ...overrideConfig };
         const grid = initializeGrid(
-          config.resolutionLat,
-          config.resolutionLon,
-          config.startingMap,
-          config.customMap
+          runConfig.resolutionLat,
+          runConfig.resolutionLon,
+          runConfig.startingMap,
+          runConfig.customMap
         );
-        const res = await runSimulation(grid, planet, atm, phys, config, (p, label, stepId) => {
+        const res = await runSimulation(grid, planet, atm, phys, runConfig, (p, label, stepId) => {
              setProgress(p);
              if (label) setLoadingLabel(label);
              if (stepId) setProcessingStep(stepId);
