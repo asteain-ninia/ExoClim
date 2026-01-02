@@ -342,13 +342,13 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                  </div>
 
                  <div className="flex justify-between items-center border-b border-cyan-900/50 pb-1 mb-3 mt-4">
-                     <h3 className="text-xs font-bold text-cyan-400 uppercase">Step 2: 海流シミュレーション</h3>
-                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 2.0 - 2.3</span>
+                     <h3 className="text-xs font-bold text-cyan-400 uppercase">Step 3: 海流シミュレーション</h3>
+                     <span className="text-[9px] text-gray-500 uppercase tracking-wider">Pass 3.0 - 3.3</span>
                  </div>
                  
                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-20">
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.0 衝突判定と生成</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">3.0 衝突判定と生成</div>
                         <div className="space-y-1">
                              <Slider label="衝突バッファ" value={phys.oceanCollisionBuffer} min={0} max={maxCollisionBuffer} step={10} unit="km" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanCollisionBuffer', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanCollisionBuffer} />
@@ -360,7 +360,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
 
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.1 基本流体力学</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">3.1 基本流体力学</div>
                         <div className="space-y-1">
                              <Slider label="解析ステップ数" value={phys.oceanStreamlineSteps || 500} min={100} max={2000} step={100} unit="steps" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanStreamlineSteps', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanStreamlineSteps} />
@@ -374,7 +374,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
 
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.2 EC チューニング</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">3.2 EC チューニング</div>
                         <div className="space-y-1">
                              <Slider label="EC 引力係数" value={phys.oceanEcPatternForce} min={0.01} max={0.5} step={0.01} unit="P" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanEcPatternForce', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanEcPatternForce} />
@@ -388,7 +388,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                     </div>
                     
                     <div className="bg-gray-900/40 p-2 rounded border border-gray-800 hover:border-cyan-900/30 transition-colors">
-                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">2.3 高度な流れ制御</div>
+                        <div className="text-[9px] font-bold text-gray-500 mb-2 uppercase">3.3 高度な流れ制御</div>
                         <div className="space-y-1">
                              <Slider label="生成時初速" value={phys.oceanSpawnSpeedMultiplier} min={0.1} max={2.0} step={0.1} unit="倍" color="cyan"
                                 onChange={(v:number) => updatePhys('oceanSpawnSpeedMultiplier', v)} defaultValue={DEFAULT_PHYSICS_PARAMS.oceanSpawnSpeedMultiplier} />
