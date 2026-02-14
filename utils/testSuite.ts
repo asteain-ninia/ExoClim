@@ -1,5 +1,5 @@
 
-import { SimulationResult, OceanDiagnosticLog } from '../types';
+import { SimulationResult } from '../types';
 
 export interface TestResult {
     name: string;
@@ -16,6 +16,21 @@ export const runTestSuite = async (): Promise<TestResult[]> => {
 
 export const analyzeSimulation = (data: SimulationResult): TestResult[] => {
     const results: TestResult[] = [];
+    const status = data.implementationStatus;
+
+    const missingModels: string[] = [];
+    if (status.thermoModel !== 'implemented') missingModels.push('Thermo');
+    if (status.hydroModel !== 'implemented') missingModels.push('Hydro');
+    if (status.climateClassification !== 'implemented') missingModels.push('ClimateClassification');
+
+    if (missingModels.length > 0) {
+        results.push({
+            name: "Model Coverage",
+            passed: false,
+            message: "Temperature, precipitation, and/or climate-class outputs are not physically implemented yet.",
+            details: `Not implemented: ${missingModels.join(', ')}`
+        });
+    }
 
     // Ocean Current Diagnostics
     if (!data.diagnostics || data.diagnostics.length === 0) {
@@ -26,7 +41,6 @@ export const analyzeSimulation = (data: SimulationResult): TestResult[] => {
         });
     } else {
         const infantDeaths = data.diagnostics.filter(d => d.type === 'EC_INFANT_DEATH');
-        const deathRate = (infantDeaths.length / Math.max(1, data.diagnostics.length + 100)) * 100; // rough estimate
 
         if (infantDeaths.length > 0) {
              const sample = infantDeaths.slice(0, 3).map(d => `[Lat:${d.lat.toFixed(1)}, Lon:${d.lon.toFixed(1)}] ${d.message}`).join("\n");

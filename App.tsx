@@ -11,7 +11,7 @@ import { initializeGrid } from './services/geography';
 import { exportAllData } from './services/exporter';
 import { PlanetParams, AtmosphereParams, SimulationResult, SimulationConfig, PhysicsParams } from './types';
 
-const ANNUAL_ONLY_MODES = new Set(['elevation', 'distCoast', 'itcz_heatmap', 'ocean_collision', 'climate']);
+const ANNUAL_ONLY_MODES = new Set(['elevation', 'distCoast', 'itcz_heatmap', 'ocean_collision', 'climate', 'step4']);
 const NO_ANNUAL_MODES = new Set(['oceanCurrent']);
 
 const App: React.FC = () => {
@@ -52,7 +52,8 @@ const App: React.FC = () => {
           DEFAULT_CONFIG.resolutionLat,
           DEFAULT_CONFIG.resolutionLon,
           DEFAULT_CONFIG.startingMap,
-          DEFAULT_CONFIG.customMap
+          DEFAULT_CONFIG.customMap,
+          DEFAULT_CONFIG.seed
         );
         setIsRunning(true);
         const res = await runSimulation(grid, EARTH_PARAMS, EARTH_ATMOSPHERE, DEFAULT_PHYSICS_PARAMS, DEFAULT_CONFIG, () => {});
@@ -96,7 +97,8 @@ const App: React.FC = () => {
           runConfig.resolutionLat,
           runConfig.resolutionLon,
           runConfig.startingMap,
-          runConfig.customMap
+          runConfig.customMap,
+          runConfig.seed
         );
         const res = await runSimulation(grid, planet, atm, phys, runConfig, (p, label, stepId) => {
              setProgress(p);
@@ -159,6 +161,7 @@ const App: React.FC = () => {
              effectivePhys={effectivePhys} // Effective phys for re-calculation and guides
              planet={planet}
              cellCount={result.cellCount}
+             windCellBoundaries={result.wind?.cellBoundariesDeg}
              hadleyWidth={result.hadleyWidth}
              onClose={() => setShowOceanDebug(false)}
           />

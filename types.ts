@@ -141,6 +141,7 @@ export interface SimulationConfig {
   resolutionLon: number;
   startingMap: 'PROCEDURAL' | 'CUSTOM' | 'EARTH' | 'VIRTUAL_CONTINENT'; 
   customMap?: CustomMapData;
+  seed: number; // Deterministic seed for geography/ocean stochastic choices
   zoom: number; // Map zoom level (1.0 - X.X)
 }
 
@@ -216,6 +217,12 @@ export interface DebugSimulationData {
     itczLine: number[];
 }
 
+export interface SimulationImplementationStatus {
+  thermoModel: 'implemented' | 'not_implemented';
+  hydroModel: 'implemented' | 'not_implemented';
+  climateClassification: 'implemented' | 'not_implemented';
+}
+
 export interface SimulationResult {
   grid: GridCell[];
   globalTemp: number;
@@ -229,5 +236,6 @@ export interface SimulationResult {
   oceanStreamlines: OceanStreamline[][]; // [Month (0=Jan, 6=Jul)][LineIndex]
   impactPoints: OceanImpact[][]; // [Month][ImpactIndex]
   diagnostics: OceanDiagnosticLog[]; // Debug logs from physics engine
+  implementationStatus: SimulationImplementationStatus;
   debugData?: DebugSimulationData; // Optional full debug history
 }

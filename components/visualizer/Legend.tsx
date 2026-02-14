@@ -152,6 +152,15 @@ const Legend: React.FC<{ mode: string }> = ({ mode }) => {
                     </div>
                 </div>
             );
+        case 'step4':
+            return (
+                <div className={containerClass}>
+                    <h4 className={titleClass}>Step 4: 気流詳細</h4>
+                    <p className="text-[10px] text-amber-200 leading-relaxed">
+                        このステップは未実装です。表示はプレースホルダで、物理結果は含みません。
+                    </p>
+                </div>
+            );
         default:
             return null;
       }

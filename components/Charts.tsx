@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { SimulationResult } from '../types';
 
 interface Props {
@@ -37,8 +37,13 @@ const SizeAwareContainer: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
 const Charts: React.FC<Props> = ({ data, displayMonth }) => {
+  const thermoImplemented = data?.implementationStatus.thermoModel === 'implemented';
+  const hydroImplemented = data?.implementationStatus.hydroModel === 'implemented';
+  const climateImplemented = data?.implementationStatus.climateClassification === 'implemented';
+  const hasThermoHydro = thermoImplemented && hydroImplemented;
+
   const chartData = useMemo(() => {
-    if (!data) return [];
+    if (!data || !hasThermoHydro) return [];
 
     // Group by latitude for Zonal Means
     const latGroups = new Map<number, { temp: number[], precip: number[] }>();
@@ -73,7 +78,7 @@ const Charts: React.FC<Props> = ({ data, displayMonth }) => {
 
     // Sort North to South (90 to -90)
     return result.sort((a, b) => a.lat - b.lat); 
-  }, [data, displayMonth]);
+  }, [data, displayMonth, hasThermoHydro]);
 
   if (!data) return <div className="h-full flex items-center justify-center text-gray-500 text-xs text-center p-4">データの読込を<br/>待機しています</div>;
 
@@ -86,7 +91,9 @@ const Charts: React.FC<Props> = ({ data, displayMonth }) => {
         <div className="grid grid-cols-2 gap-2 text-[10px]">
            <div className="bg-gray-800 p-1 rounded text-center border-l-2 border-red-400">
               <span className="block text-gray-500 text-[9px]">全球平均気温</span>
-              <span className="text-white font-mono">{(data.globalTemp - 273.15).toFixed(1)}°C</span>
+              <span className="text-white font-mono">
+                {thermoImplemented ? `${(data.globalTemp - 273.15).toFixed(1)}°C` : '未実装'}
+              </span>
            </div>
            <div className="bg-gray-800 p-1 rounded text-center border-l-2 border-blue-400">
               <span className="block text-gray-500 text-[9px]">大気循環セル数</span>
@@ -98,83 +105,87 @@ const Charts: React.FC<Props> = ({ data, displayMonth }) => {
       </div>
       
       <div className="flex-1 min-h-0 relative">
-        <SizeAwareContainer>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart 
-                data={chartData} 
-                layout="vertical" 
-                margin={{ top: 10, right: 10, left: -25, bottom: 10 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={true} vertical={true} />
-              
-              {/* X Axis 1: Temperature (Top) - Red */}
-              <XAxis 
+        {!hasThermoHydro ? (
+          <div className="h-full flex items-center justify-center p-4">
+            <div className="w-full border border-amber-700/50 bg-amber-950/30 rounded p-3 text-xs text-amber-100 leading-relaxed">
+              <div className="font-bold text-amber-300 mb-1">Thermo/Hydro 未実装</div>
+              <div>温度と降水の計算はまだ実装されていないため、チャートは表示していません。</div>
+              {!climateImplemented && (
+                <div className="mt-2 text-amber-200">気候分類（Koppen）も未実装です。</div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <SizeAwareContainer>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart 
+                  data={chartData} 
+                  layout="vertical" 
+                  margin={{ top: 10, right: 10, left: -25, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={true} vertical={true} />
+                <XAxis 
+                    xAxisId="temp"
+                    type="number" 
+                    orientation="top" 
+                    stroke="#F87171"
+                    tick={{ fontSize: 9, fill: '#F87171' }}
+                    tickCount={5}
+                    domain={['auto', 'auto']}
+                    label={{ value: "気温 (°C)", position: 'insideTop', fill: '#F87171', fontSize: 9, offset: -5 }}
+                />
+                <XAxis 
+                    xAxisId="precip"
+                    type="number" 
+                    orientation="bottom" 
+                    stroke="#60A5FA"
+                    tick={{ fontSize: 9, fill: '#60A5FA' }}
+                    tickCount={5}
+                    domain={[0, 'auto']}
+                    label={{ value: "降水 (mm)", position: 'insideBottom', fill: '#60A5FA', fontSize: 9, offset: -5 }}
+                />
+                <YAxis 
+                  dataKey="lat" 
+                  type="number" 
+                  domain={[-90, 90]} 
+                  tickCount={7}
+                  interval={0}
+                  stroke="#4B5563"
+                  tick={{ fontSize: 9, fill: '#4B5563' }}
+                  allowDataOverflow={true}
+                />
+                <Tooltip 
+                    contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '4px', fontSize: '10px' }}
+                    itemStyle={{ padding: 0 }}
+                    labelStyle={{ color: '#9CA3AF', marginBottom: '2px' }}
+                    formatter={(value: number, name: string) => [value.toFixed(1), name]}
+                    labelFormatter={(lat) => `緯度: ${lat}°`}
+                    cursor={{ stroke: '#ffffff30', strokeWidth: 1 }}
+                />
+                <Line 
                   xAxisId="temp"
-                  type="number" 
-                  orientation="top" 
-                  stroke="#F87171"
-                  tick={{ fontSize: 9, fill: '#F87171' }}
-                  tickCount={5}
-                  domain={['auto', 'auto']}
-                  label={{ value: "気温 (°C)", position: 'insideTop', fill: '#F87171', fontSize: 9, offset: -5 }}
-              />
-
-              {/* X Axis 2: Precipitation (Bottom) - Blue */}
-              <XAxis 
+                  dataKey="temp" 
+                  type="monotone" 
+                  stroke="#F87171" 
+                  dot={false} 
+                  strokeWidth={2} 
+                  name="平均気温" 
+                  isAnimationActive={false} 
+                />
+                <Line 
                   xAxisId="precip"
-                  type="number" 
-                  orientation="bottom" 
-                  stroke="#60A5FA"
-                  tick={{ fontSize: 9, fill: '#60A5FA' }}
-                  tickCount={5}
-                  domain={[0, 'auto']}
-                  label={{ value: "降水 (mm)", position: 'insideBottom', fill: '#60A5FA', fontSize: 9, offset: -5 }}
-              />
-
-              {/* Y Axis: Latitude */}
-              <YAxis 
-                dataKey="lat" 
-                type="number" 
-                domain={[-90, 90]} 
-                tickCount={7}
-                interval={0}
-                stroke="#4B5563"
-                tick={{ fontSize: 9, fill: '#4B5563' }}
-                allowDataOverflow={true}
-              />
-              
-              <Tooltip 
-                  contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '4px', fontSize: '10px' }}
-                  itemStyle={{ padding: 0 }}
-                  labelStyle={{ color: '#9CA3AF', marginBottom: '2px' }}
-                  formatter={(value: number, name: string) => [value.toFixed(1), name]}
-                  labelFormatter={(lat) => `緯度: ${lat}°`}
-                  cursor={{ stroke: '#ffffff30', strokeWidth: 1 }}
-              />
-              
-              <Line 
-                xAxisId="temp"
-                dataKey="temp" 
-                type="monotone" 
-                stroke="#F87171" 
-                dot={false} 
-                strokeWidth={2} 
-                name="平均気温" 
-                isAnimationActive={false} 
-              />
-              <Line 
-                xAxisId="precip"
-                dataKey="precip" 
-                type="monotone" 
-                stroke="#60A5FA" 
-                dot={false} 
-                strokeWidth={2} 
-                name="平均降水" 
-                isAnimationActive={false} 
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </SizeAwareContainer>
+                  dataKey="precip" 
+                  type="monotone" 
+                  stroke="#60A5FA" 
+                  dot={false} 
+                  strokeWidth={2} 
+                  name="平均降水" 
+                  isAnimationActive={false} 
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </SizeAwareContainer>
+        )}
       </div>
     </div>
   );

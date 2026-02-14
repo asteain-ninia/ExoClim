@@ -101,6 +101,7 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   resolutionLat: 180, // Default to Medium for performance
   resolutionLon: 360, 
   startingMap: 'PROCEDURAL',
+  seed: 42,
   zoom: 1.0
 };
 

@@ -7,7 +7,7 @@ import Legend from './visualizer/Legend';
 
 interface Props {
   data: SimulationResult | null;
-  mode: 'temp' | 'precip' | 'distCoast' | 'climate' | 'insolation' | 'wind' | 'wind_belts' | 'tempZonal' | 'oceanCurrent' | 'elevation' | 'hadley' | 'itcz_heatmap' | 'itcz_result' | 'ocean_collision';
+  mode: 'temp' | 'precip' | 'distCoast' | 'climate' | 'insolation' | 'wind' | 'wind_belts' | 'tempZonal' | 'oceanCurrent' | 'elevation' | 'hadley' | 'itcz_heatmap' | 'itcz_result' | 'ocean_collision' | 'step4';
   width: number;
   height: number;
   displayMonth: 'annual' | 0 | 6; 
@@ -49,7 +49,8 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
       'hadley': '大気循環・ITCZ',
       'itcz_heatmap': 'Step 1.1: 熱影響マップ',
       'itcz_result': 'Step 1.6: ITCZ 算出緯度',
-      'ocean_collision': 'Step 3.0: 海流衝突判定'
+      'ocean_collision': 'Step 3.0: 海流衝突判定',
+      'step4': 'Step 4: 気流詳細 (未実装)'
   };
 
   // --- Rendering to Buffer ---
@@ -225,6 +226,9 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
                text += `\n海洋深度: ${Math.abs(dist).toFixed(0)} km`;
            }
            text += `\n標高: ${cell.elevation.toFixed(0)}m`;
+      } else if (mode === 'step4') {
+           text += `\nStep 4 は未実装です`;
+           text += `\n現在は Step 2 の風場を表示基準として利用しています`;
       } else {
            text += `\n気温: ${meanTemp}°C`;
            text += `\n${precipLabel}: ${precipVal.toFixed(0)}mm`;
@@ -288,7 +292,7 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
       <div className="absolute bottom-3 left-3 bg-black/80 px-4 py-2 rounded-full text-xs font-bold text-white backdrop-blur-md pointer-events-none select-none flex items-center gap-2 border border-white/20 shadow-lg">
         <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
         <span className="tracking-wider text-sm">{modeLabels[mode] || mode}</span>
-        {mode !== 'climate' && mode !== 'distCoast' && mode !== 'elevation' && mode !== 'oceanCurrent' && mode !== 'itcz_heatmap' && mode !== 'ocean_collision' && (
+        {mode !== 'climate' && mode !== 'distCoast' && mode !== 'elevation' && mode !== 'oceanCurrent' && mode !== 'itcz_heatmap' && mode !== 'ocean_collision' && mode !== 'step4' && (
              <span className="ml-2 px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-300">
                  {displayMonth === 'annual' ? '年平均' : (displayMonth === 0 ? '1月' : '7月')}
              </span>
@@ -296,6 +300,12 @@ const MapVisualizer: React.FC<Props> = ({ data, mode, width, height, displayMont
       </div>
 
       <Legend mode={mode} />
+
+      {mode === 'step4' && (
+        <div className="absolute inset-x-4 top-4 z-20 border border-amber-500/40 bg-amber-950/40 text-amber-100 rounded px-3 py-2 text-xs backdrop-blur-sm">
+          Step 4 (気流詳細) は未実装です。現在は Step 2 の結果を代用しています。
+        </div>
+      )}
 
       {mode === 'elevation' && (
         <div 

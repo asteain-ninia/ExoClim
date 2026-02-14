@@ -162,6 +162,23 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                             defaultValue={1.0} 
                         />
                     </div>
+                    <div>
+                        <Slider
+                            label="乱数シード"
+                            value={config.seed}
+                            min={0}
+                            max={999999}
+                            step={1}
+                            unit=""
+                            color="blue"
+                            onChange={(v: number) => {
+                                const nextSeed = Number.isFinite(v) ? Math.max(0, Math.round(v)) : config.seed;
+                                updateConfig('seed', nextSeed);
+                            }}
+                            defaultValue={42}
+                            disabled={isRunning}
+                        />
+                    </div>
                     <div className="flex gap-2 pt-2">
                         <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded text-[10px] text-gray-300 transition-colors">
                              外部マップ読込
@@ -205,6 +222,7 @@ const Controls: React.FC<Props> = ({ planet, setPlanet, atm, setAtm, config, set
                         <div className="flex justify-between"><span>グリッド:</span> <span>{config.resolutionLat}x{config.resolutionLon}</span></div>
                         <div className="flex justify-between"><span>エラー数:</span> <span className={errors.length > 0 ? "text-red-400 font-bold" : "text-gray-500"}>{errors.length}</span></div>
                         <div className="flex justify-between"><span>ズーム:</span> <span>x{(config.zoom || 1.0).toFixed(1)}</span></div>
+                        <div className="flex justify-between"><span>seed:</span> <span>{config.seed}</span></div>
                     </div>
                     {isRunning && (
                         <div className="mt-3 w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">

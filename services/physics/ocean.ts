@@ -29,6 +29,17 @@ interface ImpactPointTemp {
   lon: number;
 }
 
+const createSeededRandom = (seed: number) => {
+  let state = (seed >>> 0) || 0x6d2b79f5;
+  return () => {
+    state += 0x6d2b79f5;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
 export const computeOceanCurrents = (
   grid: GridCell[],
   itczLines: number[][],
@@ -163,6 +174,8 @@ export const computeOceanCurrents = (
 
   for (const m of targetMonths) {
     const isDebugRun = (debugMonth === m);
+    const monthSeed = (config.seed >>> 0) ^ Math.imul(m + 1, 0x9e3779b1);
+    const random = createSeededRandom(monthSeed);
     const debugFrames: DebugFrame[] = [];
     
     const itcz = itczLines[m];
@@ -657,7 +670,7 @@ export const computeOceanCurrents = (
                         const isArrival = (nvx < -0.1 && nx < -0.2); 
 
                         if (isArrival) {
-                            if (Math.random() < 0.2) { 
+                            if (random() < 0.2) { 
                                 impactResults.push({ x: nextX, y: nextY, lat: getLatFromRow(nextY), lon: getLonFromCol(nextX), type: 'EC' });
                             }
                             agent.active = false; agent.state = 'dead'; agent.cause = "Arrival (West Coast)";

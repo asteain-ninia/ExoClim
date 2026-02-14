@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DebugSimulationData, DebugAgentSnapshot, PlanetParams } from '../types';
 import { computeOceanCurrents } from '../services/physics/ocean'; // Unified Engine
 import { SimulationConfig, PhysicsParams } from '../types';
@@ -11,11 +11,12 @@ interface Props {
     effectivePhys?: PhysicsParams; // Unit J: Effective Physics (with Derived Gap)
     planet: PlanetParams;
     cellCount: number;
+    windCellBoundaries?: number[];
     hadleyWidth?: number;
     onClose: () => void;
 }
 
-const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effectivePhys, planet, cellCount, hadleyWidth, onClose }) => {
+const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effectivePhys, planet, cellCount, windCellBoundaries, hadleyWidth, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [debugData, setDebugData] = useState<DebugSimulationData | null>(null);
     const [currentStep, setCurrentStep] = useState(0);
@@ -36,6 +37,22 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effect
 
     // Unit J: Use effective parameters for re-calculation if provided
     const activePhys = effectivePhys || phys;
+    const preferredCellBoundaries = useMemo(() => {
+        if (windCellBoundaries && windCellBoundaries.length > 1) {
+            return [...windCellBoundaries]
+                .filter(v => Number.isFinite(v) && v > 0 && v < 90)
+                .sort((a, b) => a - b);
+        }
+        if (cellCount > 1) {
+            const boundaries: number[] = [];
+            for (let i = 1; i < cellCount; i++) {
+                boundaries.push((i * 90) / cellCount);
+            }
+            return boundaries;
+        }
+        return [];
+    }, [windCellBoundaries, cellCount]);
+    const usesWindBoundaries = !!windCellBoundaries && windCellBoundaries.length > 1;
 
     useEffect(() => {
         setLoading(true);
@@ -175,11 +192,9 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effect
             renderLatPolyline(ecS, 'rgba(0, 255, 255, 0.6)', [2, 4], 1);
         }
 
-        // 2c. Cell Boundaries (Estimated)
-        if (showOverlayCells && cellCount > 0) {
-            const cellDeg = 90 / cellCount;
-            for(let i=1; i<cellCount; i++) {
-                const lat = i * cellDeg;
+        // 2c. Cell Boundaries (Prefer model output from wind result)
+        if (showOverlayCells && preferredCellBoundaries.length > 0) {
+            for (const lat of preferredCellBoundaries) {
                 renderLatHLine(lat, 'rgba(255, 255, 255, 0.3)', [2, 2], 1);
                 renderLatHLine(-lat, 'rgba(255, 255, 255, 0.3)', [2, 2], 1);
             }
@@ -239,7 +254,7 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effect
             renderAgent(agent, mapSize.width);
         });
 
-    }, [debugData, currentStep, mapSize, showOverlayITCZ, showOverlayECTargets, showOverlayCells, cellCount, activePhys]);
+    }, [debugData, currentStep, mapSize, showOverlayITCZ, showOverlayECTargets, showOverlayCells, preferredCellBoundaries, activePhys]);
 
     // Interaction for Hover
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -385,7 +400,17 @@ const OceanDebugView: React.FC<Props> = ({ grid, itczLines, config, phys, effect
                             </div>
                             <div className="w-full h-px bg-gray-800 my-2"></div>
                             <div className="flex justify-between"><span>セル数:</span> <span className="text-white">{cellCount}</span></div>
-                            <div className="flex justify-between"><span>セル幅:</span> <span>{(90/cellCount).toFixed(1)}°</span></div>
+                            <div className="flex justify-between">
+                                <span>境界ソース:</span>
+                                <span className={usesWindBoundaries ? "text-cyan-300" : "text-gray-500"}>
+                                    {usesWindBoundaries ? 'wind.cellBoundariesDeg' : '90/cellCount'}
+                                </span>
+                            </div>
+                            <div className="text-[9px] text-gray-500 break-words">
+                                {preferredCellBoundaries.length > 0
+                                    ? preferredCellBoundaries.map(v => v.toFixed(1)).join(', ')
+                                    : '境界なし'}
+                            </div>
                             <div className="flex justify-between"><span>自転逆転:</span> <span className={planet.isRetrograde ? "text-orange-400" : "text-gray-500"}>{planet.isRetrograde ? "あり" : "なし"}</span></div>
                         </div>
 

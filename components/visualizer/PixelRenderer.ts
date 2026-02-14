@@ -74,6 +74,21 @@ export const drawPixels = (
              }
              [r,g,b] = d3ColorToRgb(d3.interpolateRdBu(norm));
 
+        } else if (mode === 'step4') {
+            // Placeholder pattern to avoid a black screen for an unimplemented Step 4.
+            if (cell.isLand) {
+                r = 60; g = 64; b = 72;
+            } else {
+                r = 24; g = 38; b = 68;
+            }
+            const row = Math.floor(i / gridCols);
+            const col = i % gridCols;
+            if (((row + col) % 10) < 2) {
+                r = Math.min(255, r + 18);
+                g = Math.min(255, g + 18);
+                b = Math.min(255, b + 18);
+            }
+
         } else if (mode === 'elevation' || mode === 'itcz_result' || mode === 'oceanCurrent') {
             if (!cell.isLand) {
                 if (mode === 'oceanCurrent') {

@@ -75,10 +75,10 @@ const getEarthStats = (lat: number) => {
     return { landFrac, bins };
 };
 
-const generateProceduralMap = (rows: number, cols: number) => {
+const generateProceduralMap = (rows: number, cols: number, seed: number) => {
     const elevation = new Float32Array(rows * cols);
     const isLand = new Array(rows * cols).fill(false);
-    const seed = Math.random() * 10000;
+    const baseSeed = Number.isFinite(seed) ? seed : 0;
     const rawHeight = new Float32Array(rows * cols);
 
     for (let r = 0; r < rows; r++) {
@@ -93,11 +93,11 @@ const generateProceduralMap = (rows: number, cols: number) => {
             const nx = cosLat * Math.cos(lonRad);
             const ny = sinLat; 
             const nz = cosLat * Math.sin(lonRad);
-            const continents = fbmSphere(nx, ny, nz, 6, seed);
-            const mountains = ridgeSphere(nx, ny, nz, 6, seed + 300);
-            const qx = fbmSphere(nx, ny, nz, 2, seed + 900);
-            const qy = fbmSphere(ny, nz, nx, 2, seed + 901);
-            const warp = fbmSphere(nx + qx, ny + qy, nz, 4, seed + 902);
+            const continents = fbmSphere(nx, ny, nz, 6, baseSeed + 11);
+            const mountains = ridgeSphere(nx, ny, nz, 6, baseSeed + 311);
+            const qx = fbmSphere(nx, ny, nz, 2, baseSeed + 911);
+            const qy = fbmSphere(ny, nz, nx, 2, baseSeed + 912);
+            const warp = fbmSphere(nx + qx, ny + qy, nz, 4, baseSeed + 913);
             let h = continents * 0.6 + mountains * 0.3 + warp * 0.1;
             rawHeight[r * cols + c] = h;
         }
@@ -241,7 +241,13 @@ const computeDistanceMap = (
     return distMap;
 };
 
-export const initializeGrid = (rows: number, cols: number, startingMap: string = 'PROCEDURAL', customMap?: CustomMapData): GridCell[] => {
+export const initializeGrid = (
+    rows: number,
+    cols: number,
+    startingMap: string = 'PROCEDURAL',
+    customMap?: CustomMapData,
+    seed: number = 0
+): GridCell[] => {
   const grid: GridCell[] = [];
   
   let mapData: { elevation: Float32Array | number[]; isLand: boolean[] };
@@ -267,7 +273,7 @@ export const initializeGrid = (rows: number, cols: number, startingMap: string =
   } else if (startingMap === 'VIRTUAL_CONTINENT') {
       mapData = generateVirtualContinentMap(rows, cols);
   } else {
-      mapData = generateProceduralMap(rows, cols);
+      mapData = generateProceduralMap(rows, cols, seed);
   }
 
   const rowCosLat = new Float32Array(rows);

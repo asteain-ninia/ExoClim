@@ -49,6 +49,20 @@ export const computeWindBelts = (
     }
     boundaries.push(90); // Cap at pole
 
+    const hadleyEdge = boundaries[0];
+    const rawTradeOffset = phys.windTradePeakOffsetMode === 'abs'
+        ? phys.windTradePeakOffsetDeg
+        : hadleyEdge * phys.windTradePeakOffsetFrac;
+    const tradeOffset = Math.min(
+        Math.max(0.1, rawTradeOffset),
+        Math.max(0.1, hadleyEdge - 0.1)
+    );
+    const doldrumsHalfWidth = Math.min(
+        Math.max(0, phys.windDoldrumsWidthDeg),
+        Math.max(0, hadleyEdge - 0.1)
+    );
+    const tradePeakWidth = Math.max(0.2, phys.windTradePeakWidthDeg);
+
     // --- Unit E/F: Determine Monthly Wind/Pressure ---
     // We update the grid for all 12 months
     for (let m = 0; m < 12; m++) {
@@ -97,15 +111,11 @@ export const computeWindBelts = (
                 if (latAbs <= boundaries[0]) {
                     // Tropical Zone (Hadley Cell)
                     // Unit E: Doldrums and Trade Peaks
-                    const tradeOffset = phys.windTradePeakOffsetMode === 'abs' 
-                        ? phys.windTradePeakOffsetDeg 
-                        : boundaries[0] * phys.windTradePeakOffsetFrac;
-                    
-                    // Profile: 0 at ITCZ, peak at tradeOffset, then transition to boundary
-                    // Simple peak function: x * exp(1-x) where x = dist/offset
-                    const x = absDistToItcz / Math.max(0.1, tradeOffset);
-                    const profile = x * Math.exp(1 - x);
-                    
+                    const distFromDoldrums = Math.max(0, absDistToItcz - doldrumsHalfWidth);
+                    const gaussianPeak = Math.exp(-0.5 * Math.pow((absDistToItcz - tradeOffset) / tradePeakWidth, 2));
+                    const entryRamp = distFromDoldrums / (distFromDoldrums + tradePeakWidth);
+                    const edgeFade = Math.max(0, 1 - Math.pow(absDistToItcz / Math.max(0.1, hadleyEdge), 2));
+                    const profile = gaussianPeak * entryRamp * edgeFade;
                     const tradeStrength = phys.windBaseSpeedEasterly * profile;
                     u = -Math.min(tradeStrength, phys.windTropicalUCap) * rotationSign;
 
@@ -137,19 +147,15 @@ export const computeWindBelts = (
 
     // --- Step 2.1: Derived Values for Step 3 ---
     // Calculate recommended gap for Ocean pass
-    const derivedTradeOffset = phys.windTradePeakOffsetMode === 'abs' 
-        ? phys.windTradePeakOffsetDeg 
-        : boundaries[0] * phys.windTradePeakOffsetFrac;
-    
     const oceanGap = phys.windOceanEcGapMode === 'manual' 
         ? phys.oceanEcLatGap 
-        : Math.min(phys.windOceanEcGapClampMax, Math.max(phys.windOceanEcGapClampMin, derivedTradeOffset));
+        : Math.min(phys.windOceanEcGapClampMax, Math.max(phys.windOceanEcGapClampMin, tradeOffset));
 
     return {
         hadleyEdgeDeg: boundaries[0],
         cellBoundariesDeg: boundaries,
-        doldrumsHalfWidthDeg: phys.windDoldrumsWidthDeg,
-        tradePeakOffsetDeg: derivedTradeOffset,
+        doldrumsHalfWidthDeg: doldrumsHalfWidth,
+        tradePeakOffsetDeg: tradeOffset,
         oceanEcLatGapDerived: oceanGap,
         modelLevel: 'trade',
         debug: {
@@ -157,7 +163,9 @@ export const computeWindBelts = (
                 rotationSign,
                 cellCount,
                 hadleyWidth: boundaries[0],
-                derivedTradeOffset
+                tradeOffset,
+                doldrumsHalfWidth,
+                tradePeakWidth
             }
         }
     };

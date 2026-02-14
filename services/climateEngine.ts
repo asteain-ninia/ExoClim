@@ -80,6 +80,11 @@ export const runSimulation = async (
       wind: windRes,
       oceanStreamlines: oceanRes.streamlines,
       impactPoints: oceanRes.impacts,
-      diagnostics: oceanRes.diagnostics
+      diagnostics: oceanRes.diagnostics,
+      implementationStatus: {
+          thermoModel: 'not_implemented',
+          hydroModel: 'not_implemented',
+          climateClassification: 'not_implemented'
+      }
   };
 };
